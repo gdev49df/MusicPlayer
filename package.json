@@ -25,6 +25,6 @@
   },
   "type": "commonjs",
   "pripev": {
-    "server": ""
+    "server": "https://musicplayer.wsmp.workers.dev"
   }
 }
