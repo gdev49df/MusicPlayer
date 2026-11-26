@@ -17,7 +17,7 @@ function uniquePath(dir, name) {
 function create() {
   const area = screen.getPrimaryDisplay().workAreaSize;
   win = new BrowserWindow({
-    width: Math.min(1400, area.width),
+    width: Math.min(1440, area.width),
     height: Math.min(920, area.height),
     minWidth: Math.min(820, area.width),
     minHeight: Math.min(600, area.height),
@@ -37,7 +37,10 @@ function create() {
   });
   win.once('ready-to-show', () => win.show());
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  win.webContents.on('will-navigate', (e) => e.preventDefault());
+  // разрешена только перезагрузка самой программы («Новый проект»)
+  win.webContents.on('will-navigate', (e) => {
+    if (e.url !== win.webContents.getURL()) e.preventDefault();
+  });
   win.loadFile(path.join(__dirname, 'app.html'));
 }
 
@@ -104,10 +107,13 @@ app.whenReady().then(() => {
   );
 
   ses.on('will-download', (_e, item) => {
+    const ext = path.extname(item.getFilename()).slice(1) || 'mp4';
+    const video = ext === 'mp4' || ext === 'webm';
+    const kind = video ? 'Видео' : ext === 'lrc' ? 'Текст песни' : 'Проект «Припев»';
     item.setSaveDialogOptions({
-      title: 'Сохранить видео',
-      defaultPath: uniquePath(app.getPath('videos'), item.getFilename()),
-      filters: [{ name: 'Видео', extensions: [path.extname(item.getFilename()).slice(1) || 'mp4'] }],
+      title: 'Сохранить',
+      defaultPath: uniquePath(app.getPath(video ? 'videos' : 'documents'), item.getFilename()),
+      filters: [{ name: kind, extensions: [ext] }],
     });
     item.once('done', (_ev, state) => {
       if (state === 'completed') shell.showItemInFolder(item.getSavePath());

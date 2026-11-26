@@ -40,6 +40,10 @@ export function readTags(file) {
   });
 }
 
+// пометки изменённой скорости мешают поиску, но подсказывают, что тайминги надо растянуть
+const SPEED_TAG = /(?<![\p{L}\p{N}])(super\s+|ultra\s+)?(slowed(\s*(\+|&|and|n)?\s*reverb(ed)?)?|sped\s*up|speed\s*up|nightcore|reverb(ed)?|замедленн?(ая|ый|ое)(\s+версия)?|ускоренн?(ая|ый|ое)(\s+версия)?)(?![\p{L}\p{N}])/giu;
+export const changedSpeed = (s) => new RegExp(SPEED_TAG.source, 'iu').test((s || '').replace(/_/g, ' '));
+
 export function cleanName(s) {
   return (s || '')
     .replace(/[([{][^)\]}]*(official|video|audio|lyric|клип|muz|zaycev|\.(ru|net|com|kz|me|org)|kbps|prod)[^)\]}]*[)\]}]/gi, ' ')
@@ -47,6 +51,17 @@ export function cleanName(s) {
     .replace(/\b(128|192|256|320)\s?kbps\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+// название для поиска: без «slowed», «sped up» и подобного
+export function searchName(s) {
+  const out = cleanName(s)
+    .replace(SPEED_TAG, ' ')
+    .replace(/[([{]\s*[)\]}]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*[-–—|]+\s*$/, '')
+    .trim();
+  return out || cleanName(s);
 }
 
 export function parseFileName(name) {
@@ -135,7 +150,8 @@ async function deezer(term) {
 }
 
 export async function searchCovers(artist, title) {
-  const term = `${artist} ${cleanName(title)}`.trim();
+  title = searchName(title);
+  const term = `${artist} ${title}`.trim();
   const jobs = [itunes(term, 'KZ'), itunes(term, 'US'), deezer(term)];
   if (/[а-я]/i.test(term)) jobs.push(itunes(term, 'RU'));
   const res = await Promise.allSettled(jobs);
@@ -156,7 +172,7 @@ export async function searchCovers(artist, title) {
 }
 
 export async function searchLyrics(artist, title, duration) {
-  const t = cleanName(title);
+  const t = searchName(title);
   const base = 'https://lrclib.net/api/search?';
   const queries = [
     new URLSearchParams(artist ? { track_name: t, artist_name: artist } : { q: t }),

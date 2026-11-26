@@ -5,25 +5,9 @@ import {
   canEncodeAudio, getFirstEncodableVideoCodec,
 } from 'mediabunny';
 import { registerAacEncoder } from '@mediabunny/aac-encoder';
+import { sliceAudio } from './audio.js';
 
 let aacRegistered = false;
-
-export function sliceAudio(buffer, from, to) {
-  const rate = buffer.sampleRate;
-  const a = Math.floor(from * rate);
-  const n = Math.max(1, Math.min(buffer.length, Math.ceil(to * rate)) - a);
-  const channels = Math.min(2, buffer.numberOfChannels);
-  const out = new AudioBuffer({ length: n, numberOfChannels: channels, sampleRate: rate });
-  const fadeIn = Math.min(n / 4, rate * 0.12);
-  const fadeOut = Math.min(n / 3, rate * 0.7);
-  for (let c = 0; c < channels; c++) {
-    const d = out.getChannelData(c);
-    d.set(buffer.getChannelData(c).subarray(a, a + n));
-    for (let i = 0; i < fadeIn; i++) d[i] *= i / fadeIn;
-    for (let i = 0; i < fadeOut; i++) d[n - 1 - i] *= i / fadeOut;
-  }
-  return out;
-}
 
 function chunk(buffer, start, length) {
   const n = Math.min(length, buffer.length - start);
@@ -46,8 +30,8 @@ export async function exportVideo(opts) {
   return encode(opts, codec);
 }
 
-async function encode({ renderer, buffer, from, to, fps, onProgress, signal }, codec) {
-  const audio = sliceAudio(buffer, from, to);
+async function encode({ renderer, buffer, from, to, fps, sound: mixing, onProgress, signal }, codec) {
+  const audio = sliceAudio(buffer, from, to, mixing);
   const params = { numberOfChannels: audio.numberOfChannels, sampleRate: audio.sampleRate, bitrate: 192e3 };
   if (!aacRegistered && !(await canEncodeAudio('aac', params))) {
     registerAacEncoder();
@@ -59,9 +43,9 @@ async function encode({ renderer, buffer, from, to, fps, onProgress, signal }, c
   const g = canvas.getContext('2d', { alpha: false });
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: 'in-memory' }), target: new BufferTarget() });
   const video = new CanvasSource(canvas, { codec, bitrate: fps > 30 ? 14e6 : 10e6, keyFrameInterval: 2 });
-  const sound = new AudioBufferSource({ codec: 'aac', bitrate: 192e3 });
+  const track = new AudioBufferSource({ codec: 'aac', bitrate: 192e3 });
   output.addVideoTrack(video, { frameRate: fps });
-  output.addAudioTrack(sound);
+  output.addAudioTrack(track);
   try {
     await output.start();
     const frames = Math.max(1, Math.round(audio.duration * fps));
@@ -70,7 +54,7 @@ async function encode({ renderer, buffer, from, to, fps, onProgress, signal }, c
       if (signal.aborted) throw new DOMException('cancel', 'AbortError');
       // звук подаём порциями по секунде, чуть опережая видео
       while (fed < audio.length && fed / audio.sampleRate <= i / fps + 0.5) {
-        await sound.add(chunk(audio, fed, audio.sampleRate));
+        await track.add(chunk(audio, fed, audio.sampleRate));
         fed += audio.sampleRate;
       }
       await renderer.prepare(from + i / fps);
@@ -78,7 +62,7 @@ async function encode({ renderer, buffer, from, to, fps, onProgress, signal }, c
       await video.add(i / fps, 1 / fps);
       if (i % 6 === 0) { onProgress(i / frames, canvas); await breathe(); }
     }
-    while (fed < audio.length) { await sound.add(chunk(audio, fed, audio.sampleRate)); fed += audio.sampleRate; }
+    while (fed < audio.length) { await track.add(chunk(audio, fed, audio.sampleRate)); fed += audio.sampleRate; }
     onProgress(1, canvas);
     await output.finalize();
   } catch (e) {
@@ -92,7 +76,7 @@ async function encode({ renderer, buffer, from, to, fps, onProgress, signal }, c
   };
 }
 
-async function recordRealtime({ renderer, buffer, from, to, fps, onProgress, signal }) {
+async function recordRealtime({ renderer, buffer, from, to, fps, sound, onProgress, signal }) {
   if (typeof MediaRecorder === 'undefined') throw new Error('Этот браузер не умеет записывать видео. Откройте плеер в Google Chrome.');
   const type = ['video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm']
     .find((t) => MediaRecorder.isTypeSupported(t));
@@ -105,7 +89,7 @@ async function recordRealtime({ renderer, buffer, from, to, fps, onProgress, sig
   await ac.resume();
   const dest = ac.createMediaStreamDestination();
   const src = ac.createBufferSource();
-  src.buffer = sliceAudio(buffer, from, to);
+  src.buffer = sliceAudio(buffer, from, to, sound);
   src.connect(dest);
   const stream = new MediaStream([...canvas.captureStream(fps).getTracks(), ...dest.stream.getTracks()]);
   const rec = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 10e6, audioBitsPerSecond: 192e3 });

@@ -1,7 +1,8 @@
 // Отрисовка кадра 1080×1920. Кадр зависит только от времени t,
 // поэтому предпросмотр и экспорт выглядят одинаково.
 
-import { drawDeck } from './deck.js';
+import { drawDeck, deckGeometry } from './deck.js';
+import { BANDS } from './audio.js';
 
 // размер вертикальных макетов
 const W = 1080;
@@ -18,8 +19,9 @@ const spring = (v) => (v <= 0 ? 0 : v >= 1.6 ? 1 : 1 - (1 + 7 * v) * Math.exp(-7
 const mix = (a, b, k) => a + (b - a) * k;
 
 const LAYOUTS = {
-  deck: { deck: true, W: 1920, H: 1080, box: [912, 205, 1830, 1065], anchor: 312, size: 66, gap: 52 },
-  deckTall: { deck: true, box: [74, 935, 1000, 1660], anchor: 1008, size: 64, gap: 44 },
+  // рамку и якорь «Панели» считает deckGeometry
+  deck: { deck: true, W: 1920, H: 1080, size: 74, gap: 50 },
+  deckTall: { deck: true, size: 68, gap: 42 },
   lyrics: { box: [80, 465, 880, 1470], anchor: 665, size: 78, gap: 54 },
   cover: { box: [80, 1130, 880, 1540], anchor: 1215, size: 58, gap: 34 },
   text: { box: [80, 330, 880, 1500], anchor: 760, size: 96, gap: 62 },
@@ -125,10 +127,18 @@ export class Renderer {
     this.meta = { title: '', artist: '' };
     this.items = [];
     this.duration = 0;
-    this.envelope = null;
+    this.sound = null;
+    this.introOn = false;
+    this.lyricAlpha = 1;
+    this.deckBg = canvas(480, 270);
     this.emptyText = 'Загрузите трек — здесь появится текст';
     this.bg = canvas(270, 480);
-    this.deck = { mono: true, rain: true, clock: '9:41', date: '', leftTitle: '', leftValue: '', leftCaption: '', rightTitle: '', notices: [] };
+    this.deck = {
+      effect: 'rain', strength: 0.7, mono: true, bgMode: 'cover', pulse: 0.6, intro: true, volume: 1,
+      widgetMode: 'eq', clock: '9:41', date: '', leftTitle: '', leftValue: '', leftCaption: '', rightTitle: '',
+      labels: {}, notices: [],
+      show: { status: true, island: true, media: true, player: true, eq: true, ring: true, header: true },
+    };
     this.cardMedia = null;
     this.clip = { from: 0, to: 1 };
     this.autoAccent = true;
@@ -189,7 +199,11 @@ export class Renderer {
   setStyle(s) { Object.assign(this.style, s); this.dirty = true; }
 
   layout(g) {
-    const L = LAYOUTS[this.style.layout];
+    let L = LAYOUTS[this.style.layout];
+    if (L.deck) {
+      this.G = deckGeometry(this.style.layout, this.deck.show);
+      L = { ...L, box: this.G.box, anchor: this.G.anchor };
+    }
     const size = Math.round(L.size * this.style.scale);
     const lh = Math.round(size * 1.2);
     const maxW = L.box[2] - L.box[0];
@@ -260,13 +274,18 @@ export class Renderer {
     return c;
   }
 
-  energy(t) {
-    const e = this.envelope;
-    if (!e) return 0;
-    const i = t * e.rate;
-    const a = e.data[Math.floor(i)] || 0;
-    const b = e.data[Math.floor(i) + 1] || 0;
-    return mix(a, b, i % 1);
+  // значение из анализа звука в момент t с плавным переходом между кадрами
+  sample(data, t, step = 1, shift = 0) {
+    const i = Math.max(0, t * this.sound.rate);
+    const k = Math.floor(i);
+    return mix(data[k * step + shift] || 0, data[(k + 1) * step + shift] || 0, i - k);
+  }
+
+  energy(t) { return this.sound ? this.sample(this.sound.level, t) ** 2 : 0; }
+  beat(t) { return this.sound ? this.sample(this.sound.beat, t) : 0; }
+  band(t, b) {
+    if (!this.sound) return 0;
+    return this.sample(this.sound.bands, t, BANDS, Math.min(BANDS - 1, Math.floor(b)));
   }
 
   draw(g, t, { guides = false } = {}) {
@@ -412,6 +431,9 @@ export class Renderer {
     let pos = 0;
     for (let j = 1; j <= last; j++) pos += smooth((t - lines[j].time + 0.18) / 0.45);
 
+    // во время проигрыша следующую строку видно отчётливо
+    const waiting = L.deck && lines[focus].dots ? smooth((t - lines[focus].time) / 0.5) * (1 - smooth((t - lines[focus].end + 0.3) / 0.4)) : 0;
+
     for (let i = first; i <= last; i++) {
       const line = lines[i];
       const lag = clamp(i - pos, 0, 6) * 0.045;
@@ -423,26 +445,27 @@ export class Renderer {
       const outAt = next ? next.time : Math.max(line.end + 1.5, this.duration);
       const on = smooth((t - line.time + 0.15) / 0.3) * (1 - smooth((t - outAt + 0.18) / 0.35));
 
-      if (line.dots) { this.drawDots(g, line, x0, y, t, on * edge); continue; }
+      if (line.dots) { this.drawDots(g, line, x0, y, t, on * edge * this.lyricAlpha); continue; }
 
       const dist = Math.abs(i - pos);
       const past = i < pos ? clamp(pos - i) : 0;
       // в «Панели» спетые строки уходят совсем, а дальние тускнеют
-      const base = L.deck ? mix(0.46 * clamp(1 - (dist - 1) * 0.27, 0.2, 1), 0, past) : mix(0.36, 0.17, past);
+      const upcoming = i === focus + 1 ? waiting : 0;
+      const base = L.deck ? mix(mix(0.5 * clamp(1 - (dist - 1) * 0.27, 0.2, 1), 0.82, upcoming), 0, past) : mix(0.36, 0.17, past);
       const scale = 0.965 + 0.035 * on;
       g.save();
       g.translate(x0, y + line.h / 2);
       g.scale(scale, scale);
       g.translate(0, -line.h / 2);
       if (on < 0.999) {
-        const level = this.style.blur ? clamp(L.deck ? (dist - 0.8) * 1.15 : dist - 0.15, 0, 4) : 0;
+        const level = this.style.blur ? clamp(L.deck ? (dist - 0.8) * 1.15 : dist - 0.15, 0, 4) * (1 - upcoming) : 0;
         const lo = Math.floor(level);
         const k = level - lo;
-        const a = base * edge * (1 - on);
+        const a = base * edge * (1 - on) * this.lyricAlpha;
         if (k < 0.99) { g.globalAlpha = a * (1 - k); g.drawImage(this.lineImage(line, lo), -PAD, -PAD); }
         if (k > 0.01) { g.globalAlpha = a * Math.min(1, k * 1.15); g.drawImage(this.lineImage(line, lo + 1), -PAD, -PAD); }
       }
-      if (on > 0.001) this.drawActive(g, line, t, on * edge);
+      if (on > 0.001) this.drawActive(g, line, t, on * edge * this.lyricAlpha);
       g.restore();
     }
     g.globalAlpha = 1;
@@ -511,13 +534,21 @@ export class Renderer {
     const len = Math.max(0.5, line.end - line.time);
     const p = clamp((t - line.time) / len);
     const breathe = 1 + Math.sin((t - line.time) * 2.4) * 0.09;
-    const r = this.size * 0.15 * breathe * (1 - smooth((t - line.end + 0.35) / 0.35) * 0.7);
+    const big = this.L.deck ? 1.35 : 1;
+    const r = this.size * 0.15 * big * breathe * (1 - smooth((t - line.end + 0.35) / 0.35) * 0.7);
     for (let i = 0; i < 3; i++) {
       g.globalAlpha = alpha * mix(0.28, 1, clamp(p * 3 - i));
       g.fillStyle = '#fff';
       g.beginPath();
-      g.arc(x + this.size * 0.22 + i * this.size * 0.52, y + line.h / 2, r, 0, Math.PI * 2);
+      g.arc(x + this.size * 0.22 * big + i * this.size * 0.52 * big, y + line.h / 2, r, 0, Math.PI * 2);
       g.fill();
+    }
+    if (this.L.deck && line.end - t > 0.6) { // сколько ещё ждать
+      g.globalAlpha = alpha * 0.6;
+      g.font = `600 ${Math.round(this.size * 0.38)}px ${FONT}`;
+      g.textAlign = 'left';
+      g.textBaseline = 'middle';
+      g.fillText(`${this.deck.labels.pause || 'проигрыш'} · ${Math.ceil(line.end - t)} с`, x + this.size * 2.45, y + line.h / 2 + 2);
     }
     g.globalAlpha = 1;
   }

@@ -81,6 +81,7 @@ const exported = await js("document.querySelector('#exportStatus').textContent")
 console.log('Экспорт:', exported);
 if (!exported.startsWith('Готово')) throw new Error('Экспорт не прошёл');
 
+await js("document.querySelector('#done').close()");
 await js("document.querySelector('#updCheck').click()");
 await until("!document.querySelector('#updCheck').disabled", 90, 'проверку обновлений');
 console.log('Обновления:', await js("document.querySelector('#updates').innerText"));
