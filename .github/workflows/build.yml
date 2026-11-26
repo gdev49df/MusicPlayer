@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     # server/ выкладывается в Cloudflare отдельно, player/ — это «Куплет» со своим выпуском
-    paths-ignore: ['**.md', 'server/**', 'wrangler.jsonc', 'player/**', '.gitignore', '.github/workflows/**', '.github/scripts/*player*']
+    paths-ignore: ['**.md', 'server/**', 'wrangler.jsonc', 'player/**', '.gitignore', '.gitattributes', '.github/workflows/**', '.github/scripts/*player*']
   workflow_dispatch:
 
 permissions:
