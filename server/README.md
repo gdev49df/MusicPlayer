@@ -5,7 +5,7 @@ Cloudflare Worker с базой D1: аккаунты, дневной лимит,
 ## Установка
 
 1. Cloudflare → Workers & Pages → Create → Import a repository: репозиторий с этим кодом.
-2. Имя воркера `pripev-api`, корневая папка (Root directory) `server`. Команду выкладки оставить `npx wrangler deploy`.
+2. Имя воркера `musicplayer`, корневая папка (Root directory) `server` или пустая. Команду выкладки оставить `npx wrangler deploy`.
 3. В настройках воркера: Variables and Secrets → добавить **Secret** `ADMIN_PASSWORD` (не короче 8 знаков).
 4. Адрес воркера вписать в `package.json` в корне: `"pripev": { "server": "https://…workers.dev" }` и запушить — соберётся версия с аккаунтами.
 

@@ -1,0 +1,12 @@
+// Для выкладки сервера из корня репозитория (если в Cloudflare не задана Root directory).
+// Настройки те же, что в server/wrangler.jsonc.
+{
+  "name": "musicplayer",
+  "main": "server/src/index.js",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": true,
+  "observability": { "enabled": true },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "pripev", "database_id": "ebd0e58c-0a53-4a2b-9dd3-f541ffcc4b8f" }
+  ]
+}

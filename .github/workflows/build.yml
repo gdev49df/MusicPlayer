@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     # server/ выкладывается в Cloudflare отдельно и не меняет программу
-    paths-ignore: ['**.md', 'server/**']
+    paths-ignore: ['**.md', 'server/**', 'wrangler.jsonc']
   workflow_dispatch:
 
 permissions:
