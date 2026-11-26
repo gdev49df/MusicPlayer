@@ -4,3 +4,5 @@ desktop/dist/
 desktop/app.html
 desktop/build.log
 *.exe
+player/desktop/app.html
+player/desktop/dist/

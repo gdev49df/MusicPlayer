@@ -1,0 +1,86 @@
+name: Куплет — сборка и релиз
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'player/**'
+      - '!player/**.md'
+      - 'src/sources.js'
+      - 'src/lyrics.js'
+      - '.github/workflows/player.yml'
+      - '.github/scripts/*player*'
+      - 'package-lock.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# два выпуска подряд не должны писать в один релиз одновременно
+concurrency: player-release
+
+# Все версии лежат в одном релизе с меткой player. Он никогда не «latest»,
+# поэтому обновления «Припева» его не видят.
+# С секретом RELEASES_TOKEN установщики идут в открытый репозиторий pripev-releases.
+env:
+  SPLIT: ${{ secrets.RELEASES_TOKEN != '' }}
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: node player/build.mjs
+      - run: npm ci
+        working-directory: player/desktop
+      - run: npm version "1.0.${{ github.run_number }}" --no-git-tag-version
+        working-directory: player/desktop
+      - name: Обновления из отдельного репозитория
+        if: env.SPLIT == 'true'
+        working-directory: player/desktop
+        run: npm pkg set "build.publish[0].url=https://github.com/${{ github.repository_owner }}/pripev-releases/releases/download/player/"
+      - run: npx electron-builder --win --x64 --publish never
+        working-directory: player/desktop
+      - name: Выложить в pripev-releases
+        if: env.SPLIT == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: bash .github/scripts/publish-player.sh "${{ github.repository_owner }}/pripev-releases" "1.0.${{ github.run_number }}"
+      # и сюда: по этому адресу обновляются версии, собранные до разделения
+      - name: Выложить в Releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/publish-player.sh "${{ github.repository }}" "1.0.${{ github.run_number }}"
+
+  # Проверка на чистой Windows: старая версия ставится, играет и обновляется до только что выпущенной
+  check:
+    needs: release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: node player/build.mjs
+      - run: npm ci
+        working-directory: player/desktop
+      - name: Обновления из отдельного репозитория
+        if: env.SPLIT == 'true'
+        working-directory: player/desktop
+        run: npm pkg set "build.publish[0].url=https://github.com/${{ github.repository_owner }}/pripev-releases/releases/download/player/"
+      - name: Собрать заведомо старую версию
+        working-directory: player/desktop
+        run: |
+          npm version 1.0.0 --allow-same-version --no-git-tag-version
+          npx electron-builder --win --x64 --publish never
+      - name: Установить
+        run: Start-Process player/desktop/dist/Kuplet-Setup-1.0.0.exe -ArgumentList '/S' -Wait
+      - name: Проверить работу и обновление
+        run: node .github/scripts/check-player.mjs "1.0.${{ github.run_number }}"

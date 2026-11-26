@@ -3,8 +3,8 @@ name: Сборка и релиз
 on:
   push:
     branches: [main]
-    # server/ выкладывается в Cloudflare отдельно и не меняет программу
-    paths-ignore: ['**.md', 'server/**', 'wrangler.jsonc']
+    # server/ выкладывается в Cloudflare отдельно, player/ — это «Куплет» со своим выпуском
+    paths-ignore: ['**.md', 'server/**', 'wrangler.jsonc', 'player/**', '.gitignore', '.github/workflows/**', '.github/scripts/*player*']
   workflow_dispatch:
 
 permissions:

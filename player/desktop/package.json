@@ -1,0 +1,57 @@
+{
+  "name": "kuplet",
+  "productName": "Kuplet",
+  "version": "1.0.0",
+  "description": "Kuplet - music player",
+  "author": "GwebStudio",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "studio.gweb.kuplet",
+    "productName": "Kuplet",
+    "copyright": "GwebStudio",
+    "files": [
+      "main.js",
+      "preload.js",
+      "library.js",
+      "app.html",
+      "icon.png"
+    ],
+    "electronLanguages": [
+      "ru",
+      "en-US",
+      "kk"
+    ],
+    "compression": "maximum",
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "Kuplet-Setup-${version}.${ext}",
+      "shortcutName": "Куплет"
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://github.com/gdev49df/MusicPlayer/releases/download/player/"
+      }
+    ]
+  },
+  "devDependencies": {
+    "electron": "^45.5.0",
+    "electron-builder": "^26.18.0"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11",
+    "music-metadata": "^13.0.1"
+  }
+}
