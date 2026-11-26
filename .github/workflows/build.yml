@@ -1,0 +1,33 @@
+name: Сборка Pripev.exe
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build
+      - run: npm ci
+        working-directory: desktop
+      - run: npx electron-builder --win --x64 --publish never
+        working-directory: desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pripev
+          path: desktop/dist/Pripev.exe
+      - name: Выложить в Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "v1.0.${{ github.run_number }}" desktop/dist/Pripev.exe --title "Припев 1.0.${{ github.run_number }}" --notes "Программа для Windows 64-bit. Скачайте Pripev.exe и запустите."

@@ -1,0 +1,43 @@
+{
+  "name": "pripev",
+  "productName": "Pripev",
+  "version": "1.0.0",
+  "description": "Pripev - lyric video maker",
+  "author": "GwebStudio",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "studio.gweb.pripev",
+    "productName": "Pripev",
+    "copyright": "GwebStudio",
+    "files": [
+      "main.js",
+      "app.html",
+      "icon.png"
+    ],
+    "electronLanguages": [
+      "ru",
+      "en-US",
+      "kk"
+    ],
+    "compression": "maximum",
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "icon": "build/icon.png"
+    },
+    "portable": {
+      "artifactName": "Pripev.exe",
+      "splashImage": "build/splash.bmp"
+    }
+  },
+  "devDependencies": {
+    "electron": "^45.5.0",
+    "electron-builder": "^26.18.0"
+  }
+}

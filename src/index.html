@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#101114">
+<title>Припев — видео с текстом песни для TikTok</title>
+<style>/*CSS*/</style>
+</head>
+<body>
+<header>
+  <h1>Припев</h1>
+  <p>Ваш трек, обложка и текст в такт — видео для TikTok</p>
+</header>
+
+<main>
+  <section class="stage" aria-label="Предпросмотр">
+    <div class="phone"><canvas id="view" width="1080" height="1920"></canvas></div>
+    <div class="transport">
+      <button id="play" class="round" aria-label="Играть" disabled>▶</button>
+      <div class="timeline">
+        <canvas id="wave" height="88" aria-label="Шкала трека: нажмите для перемотки, тяните края фрагмента"></canvas>
+        <div class="times"><span id="now">0:00</span><span id="range">фрагмент не выбран</span><span id="total">0:00</span></div>
+      </div>
+    </div>
+    <div class="chips" id="fragment">
+      <button data-len="15">15 с</button>
+      <button data-len="30">30 с</button>
+      <button data-len="60">60 с</button>
+      <button data-len="0">Весь трек</button>
+      <button id="fromHere">Начать отсюда</button>
+      <button id="playRange">▶ Фрагмент</button>
+    </div>
+  </section>
+
+  <div class="panel">
+    <section>
+      <h2>Музыка</h2>
+      <label class="drop" id="drop">
+        <input type="file" id="file" accept="audio/*,.mp3,.m4a,.wav,.flac,.ogg,.aac,.opus">
+        <b id="fileName">Выбрать песню</b>
+        <span>или перетащите файл сюда: MP3, M4A, WAV, FLAC</span>
+      </label>
+      <form id="searchForm">
+        <div class="two">
+          <label>Исполнитель<input id="artist" autocomplete="off"></label>
+          <label>Название<input id="title" autocomplete="off"></label>
+        </div>
+        <button class="wide" id="search" disabled>Найти обложку и текст</button>
+      </form>
+    </section>
+
+    <section>
+      <h2>Обложка</h2>
+      <p class="status" id="coverStatus" role="status">Найдётся после загрузки трека.</p>
+      <div class="covers" id="covers"></div>
+      <label class="link">Своя картинка<input type="file" id="coverFile" accept="image/*" hidden></label>
+    </section>
+
+    <section>
+      <h2>Текст</h2>
+      <p class="status" id="lyricStatus" role="status">Найдётся после загрузки трека.</p>
+      <select id="variants" hidden aria-label="Вариант текста"></select>
+      <div class="offset" id="offsetRow">
+        <label for="offset">Сдвиг текста <output id="offsetOut">0.0 с</output></label>
+        <input type="range" id="offset" min="-10" max="10" step="0.1" value="0">
+        <p class="hint">Текст спешит — двигайте вправо, отстаёт — влево.</p>
+      </div>
+      <details id="editorBox">
+        <summary>Редактировать или вставить свой текст</summary>
+        <textarea id="lrc" rows="10" spellcheck="false" placeholder="Вставьте текст построчно.&#10;Формат с таймингом: [00:12.50] строка"></textarea>
+        <div class="row">
+          <button id="applyLrc">Применить</button>
+          <button id="tapStart">Разметить в такт</button>
+          <label class="button">Открыть .lrc<input type="file" id="lrcFile" accept=".lrc,.txt" hidden></label>
+        </div>
+      </details>
+      <div class="tap" id="tap" hidden>
+        <p class="hint">Слушайте и нажимайте «Отметить» (или пробел) в начале каждой строки.</p>
+        <p class="tapPrev" id="tapPrev"></p>
+        <p class="tapNext" id="tapNext"></p>
+        <button class="wide primary" id="tapMark">Отметить строку</button>
+        <div class="row">
+          <button id="tapGap">Проигрыш</button>
+          <button id="tapUndo">Отменить шаг</button>
+          <button id="tapDone">Готово</button>
+          <button id="tapCancel">Выйти</button>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Вид</h2>
+      <div class="segment" id="layouts" role="radiogroup" aria-label="Расположение">
+        <button role="radio" data-layout="deck" aria-checked="true">Панель 16:9</button>
+        <button role="radio" data-layout="deckTall" aria-checked="false">Панель 9:16</button>
+        <button role="radio" data-layout="lyrics" aria-checked="false">Плеер</button>
+        <button role="radio" data-layout="cover" aria-checked="false">Большая обложка</button>
+        <button role="radio" data-layout="text" aria-checked="false">Крупный текст</button>
+      </div>
+      <label class="slider">Размер текста<input type="range" id="scale" min="0.75" max="1.25" step="0.05" value="1"></label>
+      <div class="checks">
+        <label><input type="checkbox" id="karaoke" checked> Заливка по словам</label>
+        <label><input type="checkbox" id="blur" checked> Размытие соседних строк</label>
+        <label><input type="checkbox" id="motion" checked> Живой фон</label>
+        <label id="progressRow"><input type="checkbox" id="progress" checked> Полоса времени</label>
+        <label id="guidesRow"><input type="checkbox" id="guides"> Показать зоны интерфейса TikTok</label>
+      </div>
+      <label>Ваш ник на видео<input id="nick" maxlength="30" placeholder="@nickname" autocomplete="off"></label>
+    </section>
+
+    <section id="deckOptions">
+      <h2>Панель</h2>
+      <div class="accentRow">
+        <label>Цвет подсветки<input type="color" id="accent" value="#ff5468"></label>
+        <label class="check"><input type="checkbox" id="autoAccent" checked> брать из обложки</label>
+      </div>
+      <p class="hint space">Чтобы слово осталось цветным, возьмите его в тексте в звёздочки: *слёзы*</p>
+      <div class="checks">
+        <label><input type="checkbox" id="rain" checked> Дождь в верхней карточке</label>
+        <label><input type="checkbox" id="mono" checked> Верхняя карточка чёрно-белая</label>
+      </div>
+      <p class="status" id="cardStatus" role="status"></p>
+      <div class="row">
+        <label class="button">Своё фото или видео в карточку<input type="file" id="cardFile" accept="image/*,video/mp4,video/webm,video/quicktime" hidden></label>
+        <button id="cardClear" hidden>Вернуть обложку</button>
+      </div>
+      <div class="two">
+        <label>Часы<input id="clock" maxlength="8" value="9:41" autocomplete="off"></label>
+        <label>Дата<input id="date" maxlength="20" autocomplete="off"></label>
+      </div>
+      <div id="widgetOptions">
+        <div class="two">
+          <label>Левый виджет<input id="leftTitle" maxlength="18" placeholder="Пульс" autocomplete="off"></label>
+          <label>Правый виджет<input id="rightTitle" maxlength="18" placeholder="Настрой" autocomplete="off"></label>
+        </div>
+        <div class="two">
+          <label>Число слева<input id="leftValue" inputmode="numeric" maxlength="12" placeholder="пусто = громкость" autocomplete="off"></label>
+          <label>Подпись под числом<input id="leftCaption" maxlength="24" placeholder="громкость" autocomplete="off"></label>
+        </div>
+      </div>
+      <label class="gap">Всплывающие сообщения: время, имя, текст
+        <textarea id="notices" rows="3" spellcheck="false" placeholder="0:08 Она: Забери меня, пожалуйста"></textarea>
+      </label>
+      <p class="status" id="noticeStatus" role="status"></p>
+    </section>
+
+    <section>
+      <h2>Видео</h2>
+      <label class="inline">Плавность
+        <select id="fps"><option value="30">30 кадров/с</option><option value="60">60 кадров/с</option></select>
+      </label>
+      <button class="wide primary" id="export" disabled>Создать видео 1080×1920</button>
+      <p class="status" id="exportStatus" role="status"></p>
+      <div id="result" hidden>
+        <video id="resultVideo" controls playsinline></video>
+        <div class="row">
+          <a class="button primary" id="download">Сохранить видео</a>
+          <button id="share" hidden>Поделиться</button>
+        </div>
+        <p class="hint">TikTok может заглушить звук с чужой музыкой. Если так случится, выберите этот трек из библиотеки звуков самого TikTok.</p>
+      </div>
+    </section>
+  </div>
+</main>
+
+<footer>Разработано GwebStudio</footer>
+
+<dialog id="busy">
+  <h2>Собираю видео</h2>
+  <canvas id="busyView" width="270" height="480"></canvas>
+  <progress id="bar" max="1" value="0"></progress>
+  <p id="busyText">0%</p>
+  <p class="hint">Не закрывайте программу, пока идёт сборка.</p>
+  <button id="cancel">Отменить</button>
+</dialog>
+
+<audio id="audio" preload="auto"></audio>
+<script>/*JS*/</script>
+</body>
+</html>
