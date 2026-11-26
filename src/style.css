@@ -88,6 +88,8 @@ button:disabled { opacity: .4; cursor: default; }
 .switch button[aria-checked=true] { background: var(--text); color: var(--ink); }
 #variants { margin-top: 10px; }
 #ownBox textarea { margin-top: 10px; }
+.nudge { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.nudge span { flex: 1; text-align: center; color: var(--mute); font-size: 12.5px; }
 .slider { margin-top: 12px; }
 .slider output { float: right; color: var(--text); font-variant-numeric: tabular-nums; }
 .tapPrev { color: var(--mute); margin: 14px 0 2px; min-height: 1.45em; }

@@ -74,13 +74,14 @@ apply.autoAccent = (v) => { renderer.autoAccent = v; renderer.updateAccent(); sy
 for (const key of ['speed', 'reverb', 'bass']) apply[key] = () => { markSound(); scheduleSound(); };
 apply.fadeIn = apply.fadeOut = apply.fps = () => {};
 for (const key of ['offset', 'stretch']) {
-  apply[key] = (v) => { state.timing[state.mode][key] = Number(v); refreshLyrics(); };
+  apply[key] = (v) => { state.timing[state.mode][key] = Number(v); showShift(); refreshLyrics(); };
 }
+apply.fill = () => refreshLyrics(false);
 apply.artist = apply.title = () => updateMeta();
 
 const SAVED = Object.keys(apply);
 const SOUND = ['volume', 'barVolume', 'fadeIn', 'fadeOut', 'speed', 'reverb', 'bass'];
-const LOOK = SAVED.filter((k) => !['artist', 'title', 'offset', 'stretch', 'notices', 'fps', 'nick', 'clock', 'date', 'leftValue', ...SOUND].includes(k));
+const LOOK = SAVED.filter((k) => !['artist', 'title', 'offset', 'stretch', 'fill', 'notices', 'fps', 'nick', 'clock', 'date', 'leftValue', ...SOUND].includes(k));
 
 function showValue(id) {
   const out = document.querySelector(`output[for="${id}"]`);
@@ -116,6 +117,16 @@ function syncAccent() {
 function updateMeta() {
   renderer.meta = { artist: $('artist').value.trim(), title: $('title').value.trim() };
 }
+
+// перематывает к следующему сообщению, чтобы увидеть его на экране
+$('noticeShow').onclick = () => {
+  const list = renderer.deck.notices.filter((n) => n.time < state.duration);
+  if (!state.buffer || !list.length) return status('noticeStatus', state.buffer ? 'Добавьте строку, например: 0:08 Имя: текст' : 'Сначала загрузите песню.', true);
+  const next = list.find((n) => n.time + 1.5 > audio.currentTime + 0.1) || list[0];
+  state.stopAt = null;
+  audio.currentTime = Math.min(state.duration - 0.1, next.time + 1.5);
+  status('noticeStatus', `Показано сообщение на ${fmt(next.time)}.${next.time < state.from || next.time > state.to ? ' Оно вне выбранного фрагмента и в видео не попадёт.' : ''}`);
+};
 
 /* ---------- вкладки ---------- */
 
@@ -287,6 +298,23 @@ const editor = createEditor($('lines'), {
     refreshLyrics();
     scheduleSave();
   },
+  // выбранная строка начинается сейчас: двигаем её и все следующие
+  shift: (id) => {
+    if (!state.buffer) return;
+    bake();
+    const list = state.lines[state.mode];
+    const i = list.findIndex((l) => l.id === id);
+    const heard = Math.max(0, audio.currentTime - 0.2) * state.speed; // с поправкой на реакцию
+    const lowest = i ? list[i - 1].time + 0.1 : 0;
+    const delta = Math.max(heard, lowest) - list[i].time;
+    for (const l of list.slice(i)) {
+      l.time += delta;
+      l.words = l.words?.map((w) => ({ ...w, start: w.start + delta, end: w.end == null ? null : w.end + delta })) || null;
+    }
+    refreshLyrics();
+    status(state.mode === 'own' ? 'ownStatus' : 'lyricStatus', `Строки сдвинуты на ${delta > 0 ? '+' : ''}${(delta / state.speed).toFixed(1)} с.`);
+    scheduleSave();
+  },
   play: (id) => {
     const line = finalLines().find((l) => l.id === id);
     if (!line || !state.buffer) return;
@@ -306,7 +334,7 @@ function refreshLyrics(redrawEditor = true) {
   if (state.tap) return;
   finalCache = finalLines();
   const { stretch, speed } = timingOf();
-  renderer.setLyrics(buildTimeline(finalCache, state.duration, stretch / speed));
+  renderer.setLyrics(buildTimeline(finalCache, state.duration, stretch / speed, number('fill') / 100));
   if (redrawEditor) editor.render(finalCache.map((l) => ({ id: l.id, time: l.time, text: l.text, label: l.label })));
   autoFragment();
 }
@@ -334,7 +362,21 @@ function bake() {
 function syncTiming() {
   writeControl('offset', state.timing[state.mode].offset);
   writeControl('stretch', state.timing[state.mode].stretch);
+  showShift();
 }
+
+function showShift() {
+  const v = state.timing[state.mode].offset;
+  $('shiftValue').textContent = v ? `${v < 0 ? 'раньше' : 'позже'} на ${Math.abs(v).toFixed(1)} с` : 'без сдвига';
+}
+// отрицательный сдвиг — текст появляется раньше
+function nudge(step) {
+  const v = Math.max(-10, Math.min(10, state.timing[state.mode].offset + step));
+  setControl('offset', Math.round(v * 10) / 10);
+  scheduleSave();
+}
+$('earlier').onclick = () => nudge(-0.2);
+$('later').onclick = () => nudge(0.2);
 
 function editLine(id, change, reorder = false) {
   bake();
@@ -725,6 +767,7 @@ function mediaTime(now) {
   return guess;
 }
 
+let pausedAt = null;
 function frame(now) {
   if (!state.exporting) {
     const t = mediaTime(now);
@@ -734,6 +777,8 @@ function frame(now) {
     monitor.set((number('volume') / 100) * fade);
     syncCardVideo(t);
     renderer.introOn = !audio.paused;
+    if (!audio.paused) pausedAt = null; else pausedAt ??= now;
+    renderer.fxTime = audio.paused && state.buffer ? t + (now - pausedAt) / 1000 : null;
     renderer.draw(g, state.buffer ? t : 2.2, { guides: $('guides').checked });
     $('now').textContent = fmt(t);
     drawWave();
@@ -777,13 +822,13 @@ function tapRefresh() {
   $('tapPrev').textContent = clean(s.lines[s.i - 1]);
   $('tapNext').textContent = clean(s.lines[s.i]) || 'Все строки отмечены';
   $('tapMark').disabled = s.i >= s.lines.length;
-  renderer.setLyrics(buildTimeline(s.done, state.duration));
+  renderer.setLyrics(buildTimeline(s.done, state.duration, 1 / state.speed, number('fill') / 100));
 }
 
 function tapMark(gap = false) {
   const s = state.tap;
   if (!s || (!gap && s.i >= s.lines.length) || (gap && !s.done.length)) return;
-  s.done.push({ ...(gap ? { text: '' } : s.lines[s.i]), time: Math.max(0, audio.currentTime - 0.08), words: null });
+  s.done.push({ ...(gap ? { text: '' } : s.lines[s.i]), time: Math.max(0, audio.currentTime - 0.2), words: null });
   if (!gap) s.i++;
   if (audio.paused) audio.play();
   tapRefresh();
@@ -1054,6 +1099,7 @@ $('export').onclick = async () => {
   $('busyView').height = renderer.height / 4;
   state.exporting = true;
   renderer.introOn = true;
+  renderer.fxTime = null;
   abort = new AbortController();
   $('bar').value = 0;
   $('busyText').textContent = '0%';
@@ -1140,7 +1186,7 @@ if (window.updater) {
 
 const today = new Date();
 setControl('date', `${today.toLocaleDateString('ru', { weekday: 'short' }).replace(/^./, (c) => c.toUpperCase())} ${today.toLocaleDateString('ru', { day: 'numeric', month: 'short' }).replace('.', '')}`);
-for (const id of SAVED) if (!['speed', 'reverb', 'bass', 'offset', 'stretch'].includes(id)) apply[id](read(id));
+for (const id of SAVED) if (!['speed', 'reverb', 'bass', 'offset', 'stretch', 'fill'].includes(id)) apply[id](read(id));
 syncView();
 markSound();
 drawPresets();

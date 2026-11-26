@@ -75,6 +75,8 @@ function sparks(g, [x, y, w, h], t, s, beat, [R, G, B]) {
 function vhs(g, [x, y, w, h], t, s) {
   g.fillStyle = `rgba(0,0,0,${0.38 * s})`;
   for (let py = y + (wrap(t * 18, 6)); py < y + h; py += 6) g.fillRect(x, py, w, 2.5);
+  g.fillStyle = white(0.07 * s); // светлые полосы видно и на тёмной картинке
+  for (let py = y + (wrap(t * 18, 6)) + 3; py < y + h; py += 6) g.fillRect(x, py, w, 1.5);
   const band = y - 60 + wrap(t * 85, h + 120);
   const gr = g.createLinearGradient(0, band, 0, band + 55);
   gr.addColorStop(0, white(0));
@@ -111,22 +113,33 @@ export function distort(g, [x, y, w, h], t, type, s, beat, image) {
     image(Math.sin(t * 31) * 24 * s);
     g.restore();
   }
-  if (type === 'glitch') {
+  if (type === 'glitch' && s > 0) {
+    // слабые помехи есть всегда, вспышки — случайно и на ударах
     const step = Math.floor(t * 12);
-    if (hash(step) > 0.2 + 0.4 * s && beat < 0.55) return;
-    for (let i = 0; i < 3 + Math.round(7 * s); i++) {
+    const burst = isBurst(step, s, beat);
+    for (let i = 0; i < (burst ? 3 + Math.round(7 * s) : 2); i++) {
       const k = step * 13 + i;
       const sy = y + hash(k + 1) * h, sh = 5 + hash(k + 2) * 40;
       g.save();
       g.beginPath(); g.rect(x, sy, w, sh); g.clip();
-      image((hash(k + 3) - 0.5) * 150 * s);
+      const shift = (hash(k + 3) < 0.5 ? -1 : 1) * (0.35 + hash(k + 4) * 0.65);
+      image(shift * (burst ? 90 : 28) * s);
       g.restore();
     }
   }
 }
 
+const isBurst = (step, s, beat) => beat > 0.3 || hash(step) < 0.2 + 0.4 * s;
+
+// насколько приглушить картинку, чтобы частицы читались и на светлой обложке
+const VEIL = { rain: 0.34, snow: 0.36, sparks: 0.45 };
+
 export function overlay(g, rect, t, type, s, beat, rgb) {
   if (s <= 0) return;
+  if (VEIL[type]) {
+    g.fillStyle = `rgba(6,8,14,${VEIL[type] * Math.min(1, 0.35 + s)})`;
+    g.fillRect(...rect);
+  }
   if (type === 'rain') rain(g, rect, t, s);
   if (type === 'snow') snow(g, rect, t, s);
   if (type === 'sparks') sparks(g, rect, t, s, beat, rgb);
@@ -134,12 +147,14 @@ export function overlay(g, rect, t, type, s, beat, rgb) {
   if (type === 'glitch') {
     const [x, y, w, h] = rect;
     const step = Math.floor(t * 12);
-    if (hash(step) > 0.2 + 0.4 * s && beat < 0.55) return;
+    const burst = isBurst(step, s, beat);
     g.save();
-    g.globalCompositeOperation = 'screen';
-    for (let i = 0; i < 6; i++) {
+    g.fillStyle = `rgba(0,0,0,${0.22 * s})`;
+    g.fillRect(x, y, w, h);
+    for (let i = 0; i < (burst ? 7 : 3); i++) { // обычное наложение: видно и на светлой картинке
       const k = step * 29 + i;
-      g.fillStyle = i % 2 ? `rgba(0,230,255,${0.45 * s})` : `rgba(255,0,140,${0.45 * s})`;
+      const a = (burst ? 0.75 : 0.55) * s;
+      g.fillStyle = i % 2 ? `rgba(0,230,255,${a})` : `rgba(255,0,140,${a})`;
       g.fillRect(x + hash(k) * w * 0.8, y + hash(k + 1) * h, 40 + hash(k + 2) * 260, 2 + hash(k + 3) * 9);
     }
     g.restore();

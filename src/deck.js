@@ -30,7 +30,7 @@ export function deckGeometry(layout, show) {
     G.anchor = header + (show.header ? 64 : 20);
     G.status = [60, 70];
     G.island = [330, 118, 420, 64];
-    G.notice = [60, 96, 960, 134];
+    G.notice = [60, 96, 960];
     return G;
   }
   const rows = [];
@@ -52,7 +52,7 @@ export function deckGeometry(layout, show) {
   G.anchor = show.header ? 300 : 260;
   G.status = [62, 52];
   G.island = [750, 22, 420, 64];
-  G.notice = [1190, 104, 664, 126];
+  G.notice = [1204, 96, 656];
   return G;
 }
 
@@ -281,15 +281,15 @@ function media(r, g, t, [x, y, w, h], beat) {
   };
   image();
   const strength = d.strength;
-  distort(g, [x, y, w, h], t, d.effect, strength, beat, image);
+  const ft = r.fxTime ?? t; // на паузе эффект в предпросмотре продолжает двигаться
+  distort(g, [x, y, w, h], ft, d.effect, strength, beat, image);
   if (d.mono) {
     g.globalCompositeOperation = 'saturation';
     g.fillStyle = '#000';
     g.fillRect(x, y, w, h);
     g.globalCompositeOperation = 'source-over';
   }
-  if (d.effect === 'rain') { g.fillStyle = `rgba(6,8,14,${0.3 * strength})`; g.fillRect(x, y, w, h); }
-  overlay(g, [x, y, w, h], t, d.effect, strength, beat, r.accentRgb);
+  overlay(g, [x, y, w, h], ft, d.effect, strength, beat, r.accentRgb);
   if (beat > 0.05) { g.fillStyle = white(beat * 0.09); g.fillRect(x, y, w, h); }
   const shade = g.createLinearGradient(0, y + h - 130, 0, y + h);
   shade.addColorStop(0, 'rgba(0,0,0,0)');
@@ -500,27 +500,145 @@ function island(r, g, t, [x, y, w, h]) {
   }
 }
 
-function notice(r, g, t, [x, y, w, h]) {
-  for (const n of r.deck.notices) {
+const NOTICE_TIME = 4.8;
+let backdrop = null; // кусок кадра под уведомлением для размытия
+
+// перенос по словам не больше чем в несколько строк, лишнее — многоточием
+function wrapLines(g, str, max, size, weight, count) {
+  g.font = `${weight} ${size}px ${FONT}`;
+  const words = str.split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = '';
+  for (let i = 0; i < words.length; i++) {
+    const next = line ? `${line} ${words[i]}` : words[i];
+    if (g.measureText(next).width <= max) { line = next; continue; }
+    if (lines.length === count - 1) { line = [next, ...words.slice(i + 1)].join(' '); break; }
+    if (line) { lines.push(line); line = ''; i--; } else lines.push(fit(g, words[i], max, size, weight));
+  }
+  if (line) lines.push(fit(g, line, max, size, weight));
+  return lines.slice(0, count);
+}
+
+// матовое стекло из того, что уже нарисовано под карточкой
+function frosted(g, x, y, w, h, radius) {
+  const m = g.getTransform();
+  const sx = m.a * x + m.e, sy = m.d * y + m.f, sw = m.a * w, sh = m.d * h;
+  backdrop ||= document.createElement('canvas');
+  const bw = Math.max(1, Math.round(w / 14)), bh = Math.max(1, Math.round(h / 14));
+  if (backdrop.width !== bw || backdrop.height !== bh) { backdrop.width = bw; backdrop.height = bh; }
+  const b = backdrop.getContext('2d');
+  b.imageSmoothingQuality = 'high';
+  b.filter = 'blur(1.5px)';
+  b.drawImage(g.canvas, sx, sy, sw, sh, -1, -1, bw + 2, bh + 2);
+  g.save();
+  g.beginPath();
+  g.roundRect(x, y, w, h, radius);
+  g.clip();
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(backdrop, x, y, w, h);
+  g.fillStyle = 'rgba(22,19,30,.76)';
+  g.fillRect(x, y, w, h);
+  g.restore();
+}
+
+function noticeCard(r, g, n, age, [x, y, w, h], lines) {
+  const [R, G, B] = r.accentRgb;
+  const fresh = 1 - smooth(age / 1.1); // свечение в момент появления
+  const radius = 42;
+  g.save();
+  g.shadowColor = 'rgba(0,0,0,.55)';
+  g.shadowBlur = 50;
+  g.shadowOffsetY = 22;
+  box(g, x, y, w, h, radius, 'rgba(14,12,20,.5)');
+  g.shadowOffsetY = 0;
+  g.shadowColor = `rgba(${R},${G},${B},${0.85 * fresh})`;
+  g.shadowBlur = 60;
+  if (fresh > 0.01) box(g, x, y, w, h, radius, 'rgba(14,12,20,.4)');
+  g.restore();
+  frosted(g, x, y, w, h, radius);
+
+  g.save();
+  g.beginPath();
+  g.roundRect(x, y, w, h, radius);
+  g.clip();
+  const tint = g.createLinearGradient(x, y, x + w * 0.7, y + h);
+  tint.addColorStop(0, `rgba(${R},${G},${B},.24)`);
+  tint.addColorStop(0.55, `rgba(${R},${G},${B},.04)`);
+  tint.addColorStop(1, white(0.03));
+  g.fillStyle = tint;
+  g.fillRect(x, y, w, h);
+  const sweep = (age - 0.25) / 0.8; // блик пробегает по стеклу один раз
+  if (sweep > 0 && sweep < 1) {
+    const at = x - 220 + (w + 440) * smooth(sweep);
+    const gr = g.createLinearGradient(at - 110, y, at + 110, y + 60);
+    gr.addColorStop(0, white(0));
+    gr.addColorStop(0.5, white(0.16));
+    gr.addColorStop(1, white(0));
+    g.fillStyle = gr;
+    g.fillRect(x, y, w, h);
+  }
+  g.restore();
+  const edge = g.createLinearGradient(x, y, x + w * 0.45, y + h);
+  edge.addColorStop(0, white(0.5));
+  edge.addColorStop(0.4, white(0.1));
+  edge.addColorStop(1, `rgba(${R},${G},${B},.45)`);
+  g.strokeStyle = edge;
+  g.lineWidth = 2;
+  g.beginPath();
+  g.roundRect(x + 1, y + 1, w - 2, h - 2, radius - 1);
+  g.stroke();
+
+  // кружок с первой буквой имени и значок сообщения
+  const cx = x + 68, cy = y + h / 2, rad = 42;
+  const hue = Math.round([...n.from].reduce((s, c) => (s * 31 + c.codePointAt(0)) % 360, 7));
+  const face = g.createLinearGradient(cx - rad, cy - rad, cx + rad, cy + rad);
+  face.addColorStop(0, `hsl(${hue} 85% 68%)`);
+  face.addColorStop(1, `hsl(${(hue + 55) % 360} 70% 44%)`);
+  g.fillStyle = face;
+  g.beginPath(); g.arc(cx, cy, rad, 0, TAU); g.fill();
+  text(g, ([...n.from][0] || '?').toUpperCase(), cx, cy + 2, 40, 800, '#fff', 'center');
+  if (age < 1.4) { // расходящееся кольцо
+    const k = clamp((age - 0.15) / 1.1);
+    g.strokeStyle = `rgba(${R},${G},${B},${0.8 * (1 - k)})`;
+    g.lineWidth = 3;
+    g.beginPath(); g.arc(cx, cy, rad + 4 + k * 24, 0, TAU); g.stroke();
+  }
+  g.fillStyle = 'rgb(24,21,32)';
+  g.beginPath(); g.arc(cx + 30, cy + 30, 21, 0, TAU); g.fill();
+  g.fillStyle = r.accent;
+  g.beginPath(); g.arc(cx + 30, cy + 30, 17, 0, TAU); g.fill();
+  bubble(g, cx + 30, cy + 30, 20, '#fff');
+
+  const tx = x + 136, right = x + w - 32;
+  const time = fit(g, label(r, 'msgTime'), 130, 19, 600);
+  text(g, time, right, y + 35, 19, 600, white(0.55), 'right');
+  const used = g.measureText(time).width;
+  text(g, fit(g, label(r, 'message').toUpperCase(), right - tx - used - 24, 17, 800), tx, y + 35, 17, 800, `rgb(${Math.round(R * 0.45 + 140)},${Math.round(G * 0.45 + 140)},${Math.round(B * 0.45 + 140)})`);
+  text(g, fit(g, n.from, right - tx, 29, 800), tx, y + 71, 29, 800);
+  lines.forEach((line, i) => text(g, line, tx, y + 110 + i * 32, 25, 500, white(0.9)));
+}
+
+// новое уведомление выпрыгивает сверху, прежние плавно уезжают под него
+function notice(r, g, t, [x, y, w]) {
+  const live = r.deck.notices.filter((n) => t >= n.time && t - n.time < NOTICE_TIME).reverse();
+  const cards = [];
+  let top = y;
+  for (const n of live.slice(0, 3)) {
     const age = t - n.time;
-    if (age < 0 || age > 4.6) continue;
-    const k = smooth(age / 0.4) * (1 - smooth((age - 4.2) / 0.4));
+    const lines = wrapLines(g, n.text, w - 168, 25, 500, 3);
+    const h = 110 + lines.length * 32;
+    cards.push({ n, age, lines, h, top, depth: cards.length });
+    top += (h + 16) * smooth(age / 0.4);
+  }
+  for (const c of cards.reverse()) {
+    const pop = 1 - Math.exp(-9 * c.age) * Math.cos(11 * c.age); // пружина
+    const out = smooth((c.age - NOTICE_TIME + 0.45) / 0.45);
+    const scale = (0.82 + 0.18 * pop) * (1 - 0.08 * out) * (1 - 0.035 * c.depth); // нижние чуть меньше: так видно, что они старее
     g.save();
-    g.globalAlpha = k;
-    g.translate(0, (1 - k) * -50);
-    g.shadowColor = 'rgba(0,0,0,.55)';
-    g.shadowBlur = 40;
-    box(g, x, y, w, h, 34, 'rgb(48,44,52)');
-    g.shadowColor = 'transparent';
-    g.strokeStyle = white(0.18);
-    g.lineWidth = 2;
-    g.stroke();
-    box(g, x + 22, y + h / 2 - 33, 66, 66, 19, r.accent);
-    bubble(g, x + 55, y + h / 2, 40, '#fff');
-    text(g, fit(g, label(r, 'message'), w - 260, 18, 600), x + 108, y + 28, 18, 600, white(0.55));
-    text(g, fit(g, label(r, 'msgTime'), 120, 18, 500), x + w - 24, y + 28, 18, 500, white(0.55), 'right');
-    text(g, fit(g, n.from, w - 140, 26, 700), x + 108, y + 62, 26, 700);
-    text(g, fit(g, n.text, w - 136, 24, 500), x + 108, y + h - 28, 24, 500);
+    g.globalAlpha = smooth(c.age / 0.16) * (1 - out);
+    g.translate(x + w / 2, c.top - (1 - pop) * 130 - out * 46);
+    g.scale(scale, scale);
+    noticeCard(r, g, c.n, c.age, [-w / 2, 0, w, c.h], c.lines);
     g.restore();
   }
 }

@@ -110,13 +110,21 @@
             <button id="tapStart">Разметить в такт</button>
             <button id="saveLrc">Сохранить .lrc</button>
           </div>
+          <div class="nudge">
+            <button id="earlier">◀ Текст раньше</button>
+            <span id="shiftValue" role="status">без сдвига</span>
+            <button id="later">Позже ▶</button>
+          </div>
           <details id="syncDetails">
-            <summary>Сдвиг и растяжение таймингов</summary>
+            <summary>Точная подстройка</summary>
+            <label class="slider">Скорость заливки слов <output for="fill"></output>
+              <input type="range" id="fill" min="60" max="180" step="5" value="100" data-unit="%"></label>
+            <p class="hint">Строка появляется вовремя, а слова красятся медленнее голоса — прибавьте скорость.</p>
           <label class="slider">Сдвиг текста <output for="offset"></output>
             <input type="range" id="offset" min="-10" max="10" step="0.1" value="0" data-unit=" с"></label>
           <label class="slider">Растяжение таймингов <output for="stretch"></output>
             <input type="range" id="stretch" min="50" max="200" step="0.5" value="100" data-unit="%"></label>
-          <p class="hint">Спешит с самого начала — двигайте сдвиг вправо. Расходится всё сильнее к концу — меняйте растяжение.</p>
+          <p class="hint">Расходится всё сильнее к концу — меняйте растяжение. Разошлось только с какого-то места — нажмите на эту строку ниже и «Поётся сейчас».</p>
           </details>
         </div>
 
@@ -232,6 +240,7 @@
           <label>По одному в строке: время, имя, текст
             <textarea id="notices" rows="3" spellcheck="false" placeholder="0:08 Она: Забери меня, пожалуйста"></textarea></label>
           <p class="status" id="noticeStatus" role="status"></p>
+          <button id="noticeShow" class="wide">Показать в кадре</button>
         </details>
       </section>
 

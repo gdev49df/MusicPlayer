@@ -129,6 +129,7 @@ export class Renderer {
     this.duration = 0;
     this.sound = null;
     this.introOn = false;
+    this.fxTime = null; // только предпросмотр на паузе
     this.lyricAlpha = 1;
     this.deckBg = canvas(480, 270);
     this.emptyText = 'Загрузите трек — здесь появится текст';

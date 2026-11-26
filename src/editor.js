@@ -24,12 +24,19 @@ export function createEditor(list, actions) {
     return words;
   };
 
+  const shiftButton = () => {
+    const b = el('button', { type: 'button', className: 'wide', textContent: 'Поётся сейчас: сдвинуть отсюда и до конца' });
+    b.dataset.act = 'shift';
+    return b;
+  };
+
   const details = (row, data) => {
     const box = el('div', { className: 'words' });
     const words = chips(box, data.text);
     const label = el('input', { className: 'label', value: data.label || '', maxLength: 24, placeholder: keyWord(words) || 'само' });
     row.querySelector('.more')?.remove();
     row.append(el('div', { className: 'more' },
+      shiftButton(),
       el('p', { className: 'hint', textContent: words.length ? 'Цветные слова: нажмите на нужные' : 'Пустая строка — это проигрыш' }),
       box,
       el('label', { textContent: 'Слово под кругом' }, label)));

@@ -84,6 +84,29 @@ function fft(re, im) {
   }
 }
 
+// Удар — заметный прирост баса или середины. Порог подстраивается под место в песне,
+// поэтому в тихих частях и в треках без бочки картинка тоже откликается.
+function beats(bass, mid, level) {
+  const n = bass.length;
+  const scale = (data) => {
+    const sorted = Float32Array.from(data).sort();
+    const strong = sorted[Math.floor(n * 0.96)] || sorted[n - 1] || 1;
+    return data.map((v) => v / strong);
+  };
+  const a = scale(bass), b = scale(mid);
+  const onset = Float32Array.from(a, (v, i) => Math.max(v, b[i] * 0.6));
+  const around = Math.round(FPS * 2.5);
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let top = 0;
+    for (let j = Math.max(0, i - around); j < Math.min(n, i + around); j++) top = Math.max(top, onset[j]);
+    const ref = Math.max(0.25, Math.min(1, top * 0.85));
+    const hit = level[i] < 0.04 ? 0 : Math.min(1, onset[i] / ref);
+    out[i] = Math.max(hit > 0.45 ? hit : 0, (out[i - 1] || 0) * 0.83);
+  }
+  return out;
+}
+
 export function analyse(buffer) {
   const size = 2048;
   const hop = buffer.sampleRate / FPS;
@@ -96,6 +119,9 @@ export function analyse(buffer) {
   const raw = new Float32Array(n * BANDS);
   const level = new Float32Array(n);
   const low = new Float32Array(n);
+  const mid = new Float32Array(n); // прирост средних частот: хлопки, малый барабан, гитара
+  const midTop = Math.round((4000 * size) / buffer.sampleRate);
+  const prev = new Float32Array(midTop + 1);
   const re = new Float32Array(size), im = new Float32Array(size);
   const bassTop = Math.max(3, Math.round((150 * size) / buffer.sampleRate));
   let maxLevel = 1e-6;
@@ -112,6 +138,11 @@ export function analyse(buffer) {
     maxLevel = Math.max(maxLevel, level[f]);
     fft(re, im);
     for (let k = 1; k <= bassTop; k++) low[f] += Math.hypot(re[k], im[k]);
+    for (let k = bassTop + 1; k <= midTop; k++) {
+      const m = Math.hypot(re[k], im[k]);
+      if (f) mid[f] += Math.max(0, m - prev[k]);
+      prev[k] = m;
+    }
     for (let b = 0; b < BANDS; b++) {
       const from = Math.max(1, edges[b]), to = Math.max(from + 1, edges[b + 1]);
       let p = 0;
@@ -129,15 +160,7 @@ export function analyse(buffer) {
     bands[i] = loudest < -60 ? 0 : Math.min(1, Math.max(0, (raw[i] - ceil + 34) / 34)) ** 1.4;
   }
   for (let i = 0; i < n; i++) level[i] /= maxLevel;
-  // удар = резкий прирост низких частот
-  const rise = Float32Array.from(low, (v, i) => Math.max(0, v - (low[i - 1] || 0)));
-  const sorted = Float32Array.from(rise).sort();
-  const strong = sorted[Math.floor(sorted.length * 0.96)] || 1;
-  const beat = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    const hit = Math.min(1, rise[i] / (strong || 1));
-    beat[i] = Math.max(hit > 0.35 ? hit : 0, (beat[i - 1] || 0) * 0.83);
-  }
+  const beat = beats(low.map((v, i) => (i ? Math.max(0, v - low[i - 1]) : 0)), mid, level);
   return { rate: FPS, n, bands, level, beat };
 }
 

@@ -75,8 +75,26 @@ export function retime(lines, { stretch = 1, offset = 0, speed = 1 } = {}) {
 
 const singTime = (text) => Math.max(1.1, [...text].length * 0.095 + 0.7);
 
+const LEAD = 0.1; // заливка чуть опережает голос, иначе кажется, что она отстаёт
+
+// Сколько секунд уходит на букву именно в этой песне. Берём плотные строки:
+// там промежуток до следующей почти целиком занят пением.
+function charTime(lines, pace) {
+  const rates = [];
+  for (let i = 0; i + 1 < lines.length; i++) {
+    const text = tokens(lines[i].text).map((w) => w.text).join(' ');
+    const gap = lines[i + 1].time - lines[i].time;
+    if (text && gap > 0.4 && gap < 12) rates.push(gap / ([...text].length + 4));
+  }
+  if (rates.length < 4) return 0.075 * pace;
+  rates.sort((a, b) => a - b);
+  return Math.max(0.045 * pace, Math.min(0.12 * pace, rates[Math.floor(rates.length * 0.3)]));
+}
+
 // Возвращает ленту: строки текста + паузы (три точки).
-export function buildTimeline(lines, duration, pace = 1) {
+// pace — растяжение темпа (slowed > 1), fill — скорость заливки слов.
+export function buildTimeline(lines, duration, pace = 1, fill = 1) {
+  const perChar = charTime(lines, pace);
   const items = [];
   const total = duration || (lines.length ? lines[lines.length - 1].time + 8 : 0);
   let quietFrom = 0; // с какого момента никто не поёт
@@ -110,9 +128,11 @@ export function buildTimeline(lines, duration, pace = 1) {
     } else {
       const weights = list.map((w) => [...w.text].length + 1.2);
       const sum = weights.reduce((a, b) => a + b, 0);
-      let at = l.time;
+      // слова заливаются в темпе пения, а не растягиваются на всю паузу до следующей строки
+      const sung = Math.min(gap * 0.9, Math.max(0.7, ([...plain].length + 4) * perChar) / fill);
+      let at = Math.max(0, l.time - LEAD);
       words = list.map((w, k) => {
-        const d = ((end - l.time) * weights[k]) / sum;
+        const d = (sung * weights[k]) / sum;
         const word = { ...w, start: at, end: at + d };
         at += d;
         return word;
