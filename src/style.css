@@ -7,6 +7,8 @@
 body { margin: 0; background: var(--ink); color: var(--text); font: 15px/1.45 "Inter Variable", system-ui, sans-serif; }
 header, main, footer { max-width: 1060px; margin: 0 auto; padding-inline: 20px; }
 header { padding-top: 22px; padding-bottom: 14px; display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
+#updates { margin-left: auto; align-self: center; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: flex-end; color: var(--mute); font-size: 13px; }
+#updates button { font-size: 13px; padding: 6px 12px; }
 h1 { margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -0.03em; }
 header p { margin: 0; color: var(--mute); }
 h2 { margin: 0 0 12px; font-size: 17px; font-weight: 700; }

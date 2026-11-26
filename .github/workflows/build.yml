@@ -1,4 +1,4 @@
-name: Сборка Pripev.exe
+name: Сборка и релиз
 
 on:
   push:
@@ -10,24 +10,51 @@ permissions:
   contents: write
 
 jobs:
-  windows:
+  release:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - run: npm ci
       - run: npm run build
       - run: npm ci
         working-directory: desktop
+      - run: npm version "1.0.${{ github.run_number }}" --no-git-tag-version
+        working-directory: desktop
       - run: npx electron-builder --win --x64 --publish never
         working-directory: desktop
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Pripev
-          path: desktop/dist/Pripev.exe
       - name: Выложить в Releases
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "v1.0.${{ github.run_number }}" desktop/dist/Pripev.exe --title "Припев 1.0.${{ github.run_number }}" --notes "Программа для Windows 64-bit. Скачайте Pripev.exe и запустите."
+        run: >
+          gh release create "v1.0.${{ github.run_number }}"
+          desktop/dist/Pripev-Setup.exe
+          desktop/dist/Pripev-Setup.exe.blockmap
+          desktop/dist/latest.yml
+          --title "Припев 1.0.${{ github.run_number }}"
+          --notes "Скачайте Pripev-Setup.exe и запустите. Если программа уже установлена, нажмите в ней «Проверить обновления»."
+
+  # Проверка на чистой Windows: старая версия ставится, работает и обновляется до только что выпущенной
+  check:
+    needs: release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build
+      - run: npm ci
+        working-directory: desktop
+      - name: Собрать заведомо старую версию
+        working-directory: desktop
+        run: |
+          npm version 1.0.0 --no-git-tag-version
+          npx electron-builder --win --x64 --publish never
+      - name: Установить
+        run: Start-Process desktop/dist/Pripev-Setup.exe -ArgumentList '/S' -Wait
+      - name: Проверить работу и обновление
+        run: node .github/scripts/check-app.mjs "1.0.${{ github.run_number }}"

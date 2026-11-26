@@ -2,10 +2,16 @@
 
 Программа для Windows: из вашей песни делает видео для TikTok с обложкой и синхронным текстом.
 
-**Скачать:** [Pripev.exe из последнего релиза](https://github.com/gdev49df/MusicPlayer/releases/latest)
+**Скачать:** [Pripev-Setup.exe](https://github.com/gdev49df/MusicPlayer/releases/latest/download/Pripev-Setup.exe) — запустите, программа установится сама и появится на рабочем столе.
 
 Программа не подписана, поэтому при первом запуске Windows может показать окно SmartScreen:
 «Подробнее» → «Выполнить в любом случае».
+
+## Обновления
+
+Вверху окна: «Проверить обновления» → «Обновить». Программа скачает новую версию, установит её и перезапустится.
+
+Каждый пуш в `main` (кроме правок только в `.md`) собирает новую версию `1.0.N` и выкладывает её в Releases.
 
 ## Возможности
 
@@ -25,7 +31,7 @@
     npm run build
     cd desktop
     npm ci
-    npm run dist        # desktop/dist/Pripev.exe
+    npm run dist        # desktop/dist/Pripev-Setup.exe
 
 ## Откуда данные
 

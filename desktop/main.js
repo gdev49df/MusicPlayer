@@ -1,4 +1,5 @@
-const { app, BrowserWindow, Menu, screen, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, screen, session, shell } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('node:path');
 const fs = require('node:fs');
 
@@ -29,6 +30,7 @@ function create() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
+      preload: path.join(__dirname, 'preload.js'),
       // экспорт видео не должен замирать, если окно свернули
       backgroundThrottling: false,
     },
@@ -38,6 +40,45 @@ function create() {
   win.webContents.on('will-navigate', (e) => e.preventDefault());
   win.loadFile(path.join(__dirname, 'app.html'));
 }
+
+/* ---------- обновления из GitHub Releases ---------- */
+
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = false;
+// ошибки возвращаются из вызовов ниже; пустой обработчик не даёт им уронить программу
+autoUpdater.on('error', () => {});
+autoUpdater.on('download-progress', (p) => win?.webContents.send('update:progress', p.percent));
+
+function explain(e) {
+  const text = String(e?.message || e);
+  if (/ENOTFOUND|ETIMEDOUT|ECONNRE|ERR_INTERNET|ERR_NAME|ERR_CONNECTION|ERR_NETWORK/i.test(text)) {
+    return 'нет связи с GitHub. Проверьте интернет.';
+  }
+  return text.split('\n')[0].slice(0, 160);
+}
+
+ipcMain.handle('update:version', () => app.getVersion());
+
+ipcMain.handle('update:check', async () => {
+  if (!app.isPackaged) return { error: 'обновления работают только в установленной программе.' };
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    return { available: Boolean(result?.isUpdateAvailable), latest: result?.updateInfo?.version };
+  } catch (e) {
+    return { error: explain(e) };
+  }
+});
+
+ipcMain.handle('update:install', async () => {
+  try {
+    await autoUpdater.downloadUpdate();
+    // даём странице показать сообщение, затем ставим тихо и запускаем снова
+    setTimeout(() => autoUpdater.quitAndInstall(true, true), 800);
+    return {};
+  } catch (e) {
+    return { error: explain(e) };
+  }
+});
 
 app.on('second-instance', () => {
   if (!win) return;

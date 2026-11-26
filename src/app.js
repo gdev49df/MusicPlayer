@@ -613,6 +613,40 @@ $('busy').addEventListener('cancel', (e) => { e.preventDefault(); abort?.abort()
 $('share').onclick = () => navigator.share({ files: [state.result] }).catch(() => {});
 $('resultVideo').onplay = () => audio.pause();
 
+/* ---------- обновления (только в программе) ---------- */
+
+if (window.updater) {
+  const say = (text) => { $('updStatus').textContent = text; };
+  $('updates').hidden = false;
+  window.updater.version().then((v) => { $('appVersion').textContent = `версия ${v}`; });
+  $('updCheck').onclick = async () => {
+    $('updCheck').disabled = true;
+    $('updInstall').hidden = true;
+    say('Проверяю…');
+    const r = await window.updater.check();
+    $('updCheck').disabled = false;
+    if (r.error) say(`Не получилось: ${r.error}`);
+    else if (!r.available) say('У вас последняя версия.');
+    else {
+      say('Вышло обновление.');
+      $('updInstall').textContent = `Обновить до ${r.latest}`;
+      $('updInstall').hidden = false;
+    }
+  };
+  window.updater.onProgress((p) => say(`Скачиваю… ${Math.round(p)}%`));
+  $('updInstall').onclick = async () => {
+    if (state.exporting) return;
+    $('updInstall').disabled = $('updCheck').disabled = $('export').disabled = true;
+    say('Скачиваю…');
+    const r = await window.updater.install();
+    if (r.error) {
+      say(`Не получилось обновить: ${r.error}`);
+      $('updInstall').disabled = $('updCheck').disabled = false;
+      $('export').disabled = !state.buffer;
+    } else say('Устанавливаю, программа сейчас перезапустится…');
+  };
+}
+
 const today = new Date();
 renderer.deck.date = `${today.toLocaleDateString('ru', { weekday: 'short' }).replace(/^./, (c) => c.toUpperCase())} ${today.toLocaleDateString('ru', { day: 'numeric', month: 'short' }).replace('.', '')}`;
 $('date').value = renderer.deck.date;
