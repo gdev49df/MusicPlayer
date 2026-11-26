@@ -6,9 +6,36 @@ const $ = (id) => document.getElementById(id);
 const date = (ms) => new Date(ms).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }).replace(/\s*г\.$/, '');
 const say = (id, text, bad = false) => { $(id).textContent = text; $(id).classList.toggle('bad', bad); };
 
+const EYE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="slash" d="M4 4l16 16"/></svg>';
+
+// кнопка «глаз» в поле пароля; возвращает функцию, которая снова всё скрывает
+function eyes(root) {
+  const all = [...root.querySelectorAll('input[type=password]')].map((input) => {
+    const box = Object.assign(document.createElement('span'), { className: 'secret' });
+    const button = Object.assign(document.createElement('button'), { type: 'button', className: 'eye', innerHTML: EYE });
+    input.setAttribute('aria-label', input.parentElement.firstChild.textContent);
+    input.before(box);
+    box.append(input, button);
+    const show = (visible) => {
+      input.type = visible ? 'text' : 'password';
+      const title = visible ? 'Скрыть пароль' : 'Показать пароль';
+      button.title = title;
+      button.setAttribute('aria-label', title);
+      button.setAttribute('aria-pressed', String(visible));
+    };
+    // курсор остаётся в поле
+    button.onmousedown = (event) => event.preventDefault();
+    button.onclick = () => show(input.type === 'password');
+    show(false);
+    return show;
+  });
+  return () => all.forEach((show) => show(false));
+}
+
 export function createAccountUI(account) {
   let creating = false;
   let busy = false;
+  const hidePasswords = eyes($('account'));
 
   // кнопка, пока идёт запрос, не нажимается второй раз
   async function task(button, status, working, action) {
@@ -35,6 +62,7 @@ export function createAccountUI(account) {
     $('repeatRow').hidden = !value;
     $('forgot').hidden = value;
     $('password').autocomplete = value ? 'new-password' : 'current-password';
+    hidePasswords();
     say('signStatus', '');
   }
 
@@ -88,7 +116,10 @@ export function createAccountUI(account) {
 
   $('accountButton').onclick = () => open();
   $('accountClose').onclick = () => $('account').close();
-  $('account').addEventListener('close', () => { $('password').value = $('password2').value = $('oldPass').value = $('newPass').value = ''; });
+  $('account').addEventListener('close', () => {
+    $('password').value = $('password2').value = $('oldPass').value = $('newPass').value = '';
+    hidePasswords();
+  });
   $('signSwitch').onclick = () => setCreating(!creating);
 
   $('signForm').onsubmit = (event) => {
@@ -101,6 +132,7 @@ export function createAccountUI(account) {
     task($('signSubmit'), 'signStatus', creating ? 'Создаю аккаунт…' : 'Вхожу…', async () => {
       await account.enter(login, password, creating);
       $('password').value = $('password2').value = '';
+      hidePasswords();
       setCreating(false);
       render();
     });

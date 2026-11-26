@@ -175,7 +175,14 @@ body:not([data-kind=deck]) .more .ring-row { display: none; }
 #account, #gate { position: fixed; text-align: left; padding: 22px; max-height: 92vh; overflow-y: auto; }
 #account h2, #gate h2 { margin: 0 0 8px; font-size: 19px; padding-right: 30px; }
 #account label { margin-top: 10px; }
-#account input[type=password] { display: block; width: 100%; margin-top: 4px; padding: 9px 11px; background: var(--field); color: var(--text); border: 1px solid var(--line); border-radius: 10px; font: inherit; }
+#account input[type=password], #account .secret input { display: block; width: 100%; margin-top: 4px; padding: 9px 11px; background: var(--field); color: var(--text); border: 1px solid var(--line); border-radius: 10px; font: inherit; }
+.secret { display: block; position: relative; }
+#account .secret input { padding-right: 44px; }
+.secret input::-ms-reveal { display: none; } /* свой «глаз» вместо системного */
+#account .eye { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 34px; height: 30px; padding: 0; margin: 0; background: none; border: 0; border-radius: 8px; color: var(--mute); }
+#account .eye:hover, #account .eye[aria-pressed=true] { color: var(--text); }
+.eye svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.eye[aria-pressed=false] .slash { display: none; }
 #account .close { position: absolute; top: 14px; right: 14px; width: 30px; height: 30px; padding: 0; border-radius: 50%; }
 .linkish, .linkish:hover:not(:disabled) { display: block; width: 100%; margin-top: 8px; background: none; border: 0; color: var(--accent); }
 .badge { display: inline-block; margin: 0; padding: 3px 11px; border-radius: 99px; background: rgba(255,255,255,.09); font-size: 12.5px; font-weight: 700; }

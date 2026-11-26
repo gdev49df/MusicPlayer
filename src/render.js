@@ -27,8 +27,8 @@ const LAYOUTS = {
   lyrics: { box: [80, 465, 880, 1470], anchor: 665, size: 78, gap: 54 },
   cover: { box: [80, 1130, 880, 1540], anchor: 1215, size: 58, gap: 34 },
   text: { box: [80, 330, 880, 1500], anchor: 760, size: 96, gap: 62 },
-  chat: { scene: true, box: [86, 330, 726, 1470], anchor: 800, size: 50, gap: 0 },
-  lock: { scene: true, box: [96, 780, 886, 1570], anchor: 900, size: 48, gap: 0 },
+  chat: { scene: true, box: [86, 330, 786, 1470], anchor: 800, size: 50, gap: 0 },
+  lock: { scene: true, box: [86, 780, 994, 1570], anchor: 900, size: 48, gap: 0 },
   vinyl: { scene: true, center: true, box: [90, 1220, 920, 1600], anchor: 1330, size: 60, gap: 30 },
   cassette: { scene: true, center: true, box: [90, 1060, 920, 1600], anchor: 1200, size: 68, gap: 38 },
 };
@@ -41,6 +41,40 @@ export const alphaOf = (color, a) => {
 export const hexColor = (c) => (/^#[0-9a-f]{6}$/i.test(c || '') ? c : '');
 // пружинка с лёгким перелётом: 0 → 1
 export const pop = (age) => (age <= 0 ? 0 : 1 - Math.exp(-11 * age) * Math.cos(13 * age));
+
+// раскладывает слова строки по рядам шириной не больше maxW
+function wrapWords(g, words, font, maxW) {
+  g.font = font;
+  const space = g.measureText(' ').width;
+  const rows = [[]];
+  let x = 0;
+  for (const w of words) {
+    // слишком длинное «слово» (например, иероглифы) режем на куски
+    const pieces = [];
+    if (g.measureText(w.text).width > maxW) {
+      let cur = '';
+      for (const ch of w.text) {
+        if (g.measureText(cur + ch).width > maxW) { pieces.push(cur); cur = ch; } else cur += ch;
+      }
+      pieces.push(cur);
+    } else pieces.push(w.text);
+    const len = [...w.text].length;
+    let done = 0;
+    for (const p of pieces) {
+      const width = g.measureText(p).width;
+      if (x > 0 && x + width > maxW) { rows.push([]); x = 0; }
+      const n = [...p].length;
+      rows[rows.length - 1].push({
+        text: p, x, w: width, mark: w.mark,
+        start: w.start + ((w.end - w.start) * done) / len,
+        end: w.start + ((w.end - w.start) * (done + n)) / len,
+      });
+      done += n;
+      x += width + space;
+    }
+  }
+  return { font, rows };
+}
 
 const canvas = (w, h) => {
   const c = document.createElement('canvas');
@@ -246,46 +280,23 @@ export class Renderer {
     }
     const sizeOf = (spec) => Math.round(L.size * this.style.scale * spec.scale);
     const maxW = L.box[2] - L.box[0];
+    // в обычных стилях очень длинная строка уменьшается, чтобы помещаться над полосой трека
+    const maxH = L.deck || (L.scene && !L.center) ? Infinity : L.box[3] - L.box[1] - 65;
     let y = 0;
     this.lines = this.items.map((it) => {
       const spec = fontOf(it.font, this.style.font);
-      const size = sizeOf(spec);
-      const lh = Math.round(size * 1.2);
+      let size = sizeOf(spec);
       if (it.dots) {
         const line = { ...it, y, h: size * 0.8, rows: [], size };
         y += line.h + L.gap;
         return line;
       }
-      const font = cssFont(spec, size);
-      g.font = font;
-      const space = g.measureText(' ').width;
-      const rows = [[]];
-      let x = 0;
-      for (const w of it.words) {
-        // слишком длинное «слово» (например, иероглифы) режем на куски
-        const pieces = [];
-        if (g.measureText(w.text).width > maxW) {
-          let cur = '';
-          for (const ch of w.text) {
-            if (g.measureText(cur + ch).width > maxW) { pieces.push(cur); cur = ch; } else cur += ch;
-          }
-          pieces.push(cur);
-        } else pieces.push(w.text);
-        const len = [...w.text].length;
-        let done = 0;
-        for (const p of pieces) {
-          const width = g.measureText(p).width;
-          if (x > 0 && x + width > maxW) { rows.push([]); x = 0; }
-          const n = [...p].length;
-          rows[rows.length - 1].push({
-            text: p, x, w: width, mark: w.mark,
-            start: w.start + ((w.end - w.start) * done) / len,
-            end: w.start + ((w.end - w.start) * (done + n)) / len,
-          });
-          done += n;
-          x += width + space;
-        }
+      let { font, rows } = wrapWords(g, it.words, cssFont(spec, size), maxW);
+      while (rows.length * Math.round(size * 1.2) > maxH && size > 28) {
+        size = Math.floor(size * 0.92);
+        ({ font, rows } = wrapWords(g, it.words, cssFont(spec, size), maxW));
       }
+      const lh = Math.round(size * 1.2);
       let width = 0;
       for (const row of rows) {
         const last = row[row.length - 1];
@@ -519,12 +530,14 @@ export class Renderer {
     // позиция прокрутки с лёгким «каскадом» для нижних строк
     let active = -1;
     for (let i = 0; i < lines.length && lines[i].time <= t; i++) active = i;
+    // очень высокая поющаяся строка встаёт выше, чтобы не заехать на полосу трека
+    const pin = (j) => lines[j].y - (L.deck ? 0 : Math.min(0, bottom - L.anchor - lines[j].h));
     const scrollAt = (lag) => {
-      let s = lines[0].y;
+      let s = pin(0);
       for (let j = 1; j < lines.length; j++) {
         const p = spring((t - lines[j].time + 0.18 - lag) / 0.8);
         if (!p) break;
-        s += (lines[j].y - lines[j - 1].y) * p;
+        s += (pin(j) - pin(j - 1)) * p;
       }
       return s;
     };
@@ -543,11 +556,13 @@ export class Renderer {
       const lag = clamp(i - pos, 0, 6) * 0.045;
       const y = L.anchor + line.y - scrollAt(lag);
       if (y + line.h < top - 80 || y > bottom + 40) continue;
-      const edge = smooth((y - (top - 75)) / 140) * smooth((bottom - (y + line.h / 2)) / 220);
-      if (edge <= 0.01) continue;
       const next = lines[i + 1];
       const outAt = next ? next.time : Math.max(line.end + 1.5, this.duration);
       const on = smooth((t - line.time + 0.15) / 0.3) * (1 - smooth((t - outAt + 0.18) / 0.35));
+      // ещё не спетая строка, которая не помещается целиком, не показывается поверх полосы трека
+      const fits = L.deck ? 1 : mix(smooth((bottom + 24 - (y + line.h)) / 90), 1, i < pos ? 1 : on);
+      const edge = smooth((y - (top - 75)) / 140) * smooth((bottom - (y + line.h / 2)) / 220) * fits;
+      if (edge <= 0.01) continue;
 
       if (line.dots) { this.drawDots(g, line, L.center ? x0 + middle - line.size * 0.75 : x0, y, t, on * edge * this.lyricAlpha); continue; }
       if (reveal && t < line.time - 0.15) continue;
@@ -778,7 +793,7 @@ export class Renderer {
   }
 
   drawProgress(g, t) {
-    const x = 80, w = 800, y = this.style.layout === 'cover' ? 1582 : 1532;
+    const x = 80, w = W - x * 2, y = this.style.layout === 'cover' ? 1582 : 1532;
     const p = this.duration ? clamp(t / this.duration) : 0;
     g.globalAlpha = 1;
     g.fillStyle = 'rgba(255,255,255,.22)';

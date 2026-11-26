@@ -61,7 +61,7 @@ function empty(r, g, y) {
 
 /* ---------- переписка ---------- */
 
-const CHAT = { left: 52, right: 926, top: 322, bottom: 1462, gap: 18, typing: 108 };
+const CHAT = { left: 52, right: 1028, top: 322, bottom: 1462, gap: 18, typing: 108 };
 
 // когда собеседник (или вы) начинает печатать сообщение номер i
 const typingFrom = (list, i) => Math.max((list[i - 1]?.line.time ?? -9) + 0.45, list[i].line.time - 1.5);
@@ -158,16 +158,17 @@ function chat(r, g, t) {
 
   // поле ввода: свои сообщения сначала набираются в нём
   const mine = writing?.side === 'me' ? writing : null;
-  box(g, CHAT.left, 1494, 760, 96, 48, 'rgba(30,30,40,.92)');
+  const field = CHAT.right - CHAT.left - 114; // до кнопки отправки
+  box(g, CHAT.left, 1494, field, 96, 48, 'rgba(30,30,40,.92)');
   if (mine) {
     const p = clamp((t - from) / Math.max(0.2, mine.line.time - from - 0.2));
     const chars = [...mine.line.text];
     const typed = chars.slice(0, Math.ceil(chars.length * p)).join('');
     g.save();
-    g.beginPath(); g.rect(CHAT.left + 36, 1494, 690, 96); g.clip();
+    g.beginPath(); g.rect(CHAT.left + 36, 1494, field - 70, 96); g.clip();
     g.font = `500 38px ${FONT}`;
     const width = g.measureText(typed).width;
-    const x = CHAT.left + 40 - Math.max(0, width - 664);
+    const x = CHAT.left + 40 - Math.max(0, width - (field - 96));
     text(g, typed, x, 1543, 38, 500);
     if (Math.floor(t * 3) % 2 === 0 || p < 1) g.fillRect(x + width + 4, 1520, 4, 46);
     g.restore();
@@ -181,7 +182,7 @@ function chat(r, g, t) {
 
 /* ---------- экран блокировки ---------- */
 
-const LOCK = { x: 50, w: 880, top: 778, bottom: 1596, gap: 16 };
+const LOCK = { x: 50, w: 980, top: 778, bottom: 1596, gap: 16 };
 
 function wallpaper(r, g, t, beat) {
   const d = r.deck;
