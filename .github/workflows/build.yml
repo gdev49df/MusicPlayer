@@ -3,11 +3,17 @@ name: Сборка и релиз
 on:
   push:
     branches: [main]
-    paths-ignore: ['**.md']
+    # server/ выкладывается в Cloudflare отдельно и не меняет программу
+    paths-ignore: ['**.md', 'server/**']
   workflow_dispatch:
 
 permissions:
   contents: write
+
+# Если задан секрет RELEASES_TOKEN, установщики и обновления идут в открытый репозиторий
+# pripev-releases, а этот репозиторий с кодом можно сделать закрытым.
+env:
+  SPLIT: ${{ secrets.RELEASES_TOKEN != '' }}
 
 jobs:
   release:
@@ -23,8 +29,25 @@ jobs:
         working-directory: desktop
       - run: npm version "1.0.${{ github.run_number }}" --no-git-tag-version
         working-directory: desktop
+      - name: Обновления из отдельного репозитория
+        if: env.SPLIT == 'true'
+        working-directory: desktop
+        run: npm pkg set "build.publish[0].repo=pripev-releases"
       - run: npx electron-builder --win --x64 --publish never
         working-directory: desktop
+      - name: Выложить в pripev-releases
+        if: env.SPLIT == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: >
+          gh release create "v1.0.${{ github.run_number }}"
+          desktop/dist/Pripev-Setup.exe
+          desktop/dist/Pripev-Setup.exe.blockmap
+          desktop/dist/latest.yml
+          --repo "${{ github.repository_owner }}/pripev-releases"
+          --title "Припев 1.0.${{ github.run_number }}"
+          --notes "Скачайте Pripev-Setup.exe и запустите. Если программа уже установлена, нажмите в ней «Проверить обновления»."
+      # и сюда: по этому адресу обновляются уже установленные старые версии
       - name: Выложить в Releases
         env:
           GH_TOKEN: ${{ github.token }}
@@ -46,9 +69,16 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
+      # без аккаунтов: проверка экспорта не должна требовать вход
       - run: npm run build
+        env:
+          PRIPEV_SERVER: 'off'
       - run: npm ci
         working-directory: desktop
+      - name: Обновления из отдельного репозитория
+        if: env.SPLIT == 'true'
+        working-directory: desktop
+        run: npm pkg set "build.publish[0].repo=pripev-releases"
       - name: Собрать заведомо старую версию
         working-directory: desktop
         run: |

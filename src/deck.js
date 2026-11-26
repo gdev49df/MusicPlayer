@@ -63,7 +63,7 @@ export function parseNotices(text) {
   }).filter(Boolean).sort((a, b) => a.time - b.time);
 }
 
-function text(g, str, x, y, size, weight = 600, color = '#fff', align = 'left') {
+export function text(g, str, x, y, size, weight = 600, color = '#fff', align = 'left') {
   g.font = `${weight} ${size}px ${FONT}`;
   g.fillStyle = color;
   g.textAlign = align;
@@ -72,7 +72,7 @@ function text(g, str, x, y, size, weight = 600, color = '#fff', align = 'left') 
   return g.measureText(str).width;
 }
 
-function fit(g, str, max, size, weight = 600) {
+export function fit(g, str, max, size, weight = 600) {
   g.font = `${weight} ${size}px ${FONT}`;
   if (g.measureText(str).width <= max) return str;
   const c = [...str];
@@ -81,7 +81,7 @@ function fit(g, str, max, size, weight = 600) {
 }
 
 // длинное название плавно прокручивается по кругу
-function marquee(g, str, x, y, max, size, weight, alpha, t) {
+export function marquee(g, str, x, y, max, size, weight, alpha, t) {
   g.font = `${weight} ${size}px ${FONT}`;
   const w = g.measureText(str).width;
   if (w <= max) { text(g, str, x, y, size, weight, white(alpha)); return; }
@@ -102,7 +102,7 @@ function marquee(g, str, x, y, max, size, weight, alpha, t) {
   g.restore();
 }
 
-function box(g, x, y, w, h, r, fill) {
+export function box(g, x, y, w, h, r, fill) {
   g.beginPath();
   g.roundRect(x, y, w, h, r);
   g.fillStyle = fill;
@@ -110,7 +110,7 @@ function box(g, x, y, w, h, r, fill) {
 }
 
 // «стекло»: размытый фон под карточкой, блик сверху и светящаяся кромка
-function glass(r, g, [x, y, w, h], radius = 36, tint = 0.07) {
+export function glass(r, g, [x, y, w, h], radius = 36, tint = 0.07) {
   const k = r.deckBg.width / r.width;
   g.save();
   g.shadowColor = 'rgba(0,0,0,.5)';
@@ -143,14 +143,14 @@ function glass(r, g, [x, y, w, h], radius = 36, tint = 0.07) {
   g.stroke();
 }
 
-const poly = (g, pts) => {
+export const poly = (g, pts) => {
   g.beginPath();
   pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
   g.closePath();
   g.fill();
 };
 
-function bubble(g, x, y, s, color) {
+export function bubble(g, x, y, s, color) {
   g.fillStyle = color;
   g.beginPath();
   g.roundRect(x - s / 2, y - s * 0.42, s, s * 0.72, s * 0.2);
@@ -178,7 +178,7 @@ function star(g, x, y, r, color, stroke) {
   if (stroke) { g.strokeStyle = color; g.lineWidth = 3; g.lineJoin = 'round'; g.stroke(); } else { g.fillStyle = color; g.fill(); }
 }
 
-function paintBackground(r, t) {
+export function paintBackground(r, t) {
   const c = r.deckBg;
   const w = Math.round(r.width / 4), h = Math.round(r.height / 4);
   if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
@@ -220,7 +220,7 @@ function paintBackground(r, t) {
   glow(w * 0.16 + Math.cos(m * 0.17) * w * 0.04, h * 0.08, long * 0.42, base * 0.6);
 }
 
-function background(r, g, t, beat) {
+export function background(r, g, t, beat) {
   const { width: W, height: H } = r;
   const [R, G, B] = r.accentRgb;
   paintBackground(r, t);
@@ -382,7 +382,7 @@ function widgetHead(r, g, [x, y, w], icon, title) {
   text(g, now, x + w - 24, y + 42, 20, 500, white(0.55), 'right');
 }
 
-function bars(r, g, t, x, y, w, h, count) {
+export function bars(r, g, t, x, y, w, h, count) {
   const step = w / count, bw = step * 0.64;
   const grad = g.createLinearGradient(0, y + h, 0, y);
   grad.addColorStop(0, r.accent);
@@ -461,10 +461,12 @@ function ringWidget(r, g, t, rect) {
   text(g, fit(g, label(r, 'state'), w - 40, 18, 500), cx, y + 309, 18, 500, white(0.45), 'center');
 }
 
-function statusBar(r, g, [x, y]) {
+export function statusBar(r, g, [x, y], iconsOnly = false) {
   const d = r.deck;
-  const tw = d.clock ? text(g, d.clock, x, y, 32, 700) : 0;
-  if (d.date) text(g, d.date, x + tw + 24, y + 1, 26, 600);
+  if (!iconsOnly) {
+    const tw = d.clock ? text(g, d.clock, x, y, 32, 700) : 0;
+    if (d.date) text(g, d.date, x + tw + 24, y + 1, 26, 600);
+  }
   const right = r.width - x;
   g.strokeStyle = white(0.6);
   g.lineWidth = 2.5;
@@ -504,7 +506,7 @@ const NOTICE_TIME = 4.8;
 let backdrop = null; // кусок кадра под уведомлением для размытия
 
 // перенос по словам не больше чем в несколько строк, лишнее — многоточием
-function wrapLines(g, str, max, size, weight, count) {
+export function wrapLines(g, str, max, size, weight, count) {
   g.font = `${weight} ${size}px ${FONT}`;
   const words = str.split(/\s+/).filter(Boolean);
   const lines = [];
@@ -520,7 +522,7 @@ function wrapLines(g, str, max, size, weight, count) {
 }
 
 // матовое стекло из того, что уже нарисовано под карточкой
-function frosted(g, x, y, w, h, radius) {
+export function frosted(g, x, y, w, h, radius) {
   const m = g.getTransform();
   const sx = m.a * x + m.e, sy = m.d * y + m.f, sw = m.a * w, sh = m.d * h;
   backdrop ||= document.createElement('canvas');
@@ -652,7 +654,7 @@ export function drawDeck(r, g, t) {
   const since = t - r.clip.from;
   const block = (order, dx, dy, draw) => {
     let p = 1;
-    if (d.intro && r.introOn && since > -0.05 && since < 3) p = 1 - (1 - clamp((since - order * 0.12) / 0.75)) ** 3;
+    if (d.intro && r.introOn && !r.loop && since > -0.05 && since < 3) p = 1 - (1 - clamp((since - order * 0.12) / 0.75)) ** 3;
     if (p <= 0.001) return;
     g.save();
     g.globalAlpha = p;

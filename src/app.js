@@ -1,4 +1,8 @@
-import { Renderer, fmt } from './render.js';
+import { Renderer, fmt, loopSpan } from './render.js';
+import { messageEvents } from './scenes.js';
+import { FONTS, loadFonts } from './fonts.js';
+import { createAccount, AccountError } from './account.js';
+import { createAccountUI } from './account-ui.js';
 import { parseNotices } from './deck.js';
 import { parseLrc, buildTimeline, retime, toLrc, distribute, tokens } from './lyrics.js';
 import { readTags, parseFileName, searchCovers, searchLyrics, changedSpeed } from './sources.js';
@@ -14,6 +18,9 @@ const g = view.getContext('2d', { alpha: false });
 const wave = $('wave');
 const renderer = new Renderer();
 const monitor = createMonitor(audio);
+const account = createAccount(__SERVER__, () => showPlan());
+const accountUI = createAccountUI(account);
+$('font').append(...Object.entries(FONTS).map(([key, f]) => new Option(f.name, key)));
 
 const state = {
   original: null, buffer: null, duration: 0, speed: 1, from: 0, to: 0, fragmentTouched: false,
@@ -21,7 +28,7 @@ const state = {
   variant: null, textApplied: '', tags: {},
   audioFile: null, coverBlob: null, cardBlob: null,
   loadId: 0, searchId: 0, coverId: 0, soundId: 0, processing: false, restoring: false,
-  stopAt: null, tap: null, exporting: false, url: null, resultUrl: null, result: null,
+  stopAt: null, tap: null, exporting: false, checking: false, url: null, resultUrl: null, result: null,
 };
 
 const status = (id, text, bad = false) => {
@@ -78,10 +85,20 @@ for (const key of ['offset', 'stretch']) {
 }
 apply.fill = () => refreshLyrics(false);
 apply.artist = apply.title = () => updateMeta();
+for (const key of ['font', 'textAnim']) apply[key] = (v) => renderer.setStyle({ [key]: v });
+apply.chatName = (v) => { renderer.chat.name = v.trim(); };
+apply.chatSound = () => {};
+apply.loop = (v) => {
+  renderer.loop = v;
+  $('fadeIn').disabled = $('fadeOut').disabled = v;
+  $('fadeHint').textContent = v ? 'Включён бесшовный повтор: затухания не нужны, склейка звука делается в готовом видео.' : 'Начало и конец слышно по кнопке «▶ Фрагмент» под шкалой трека.';
+};
+// значения для проектов, сохранённых до появления этих настроек
+const ADDED = { font: 'inter', textAnim: 'karaoke', loop: false, chatName: '', chatSound: true };
 
 const SAVED = Object.keys(apply);
 const SOUND = ['volume', 'barVolume', 'fadeIn', 'fadeOut', 'speed', 'reverb', 'bass'];
-const LOOK = SAVED.filter((k) => !['artist', 'title', 'offset', 'stretch', 'fill', 'notices', 'fps', 'nick', 'clock', 'date', 'leftValue', ...SOUND].includes(k));
+const LOOK = SAVED.filter((k) => !['artist', 'title', 'offset', 'stretch', 'fill', 'notices', 'fps', 'nick', 'clock', 'date', 'leftValue', 'loop', 'chatName', 'chatSound', ...SOUND].includes(k));
 
 function showValue(id) {
   const out = document.querySelector(`output[for="${id}"]`);
@@ -91,9 +108,13 @@ function showValue(id) {
   out.textContent = `${sign}${id === 'speed' || id === 'scale' ? v.toFixed(2) : v}${$(id).dataset.unit || ''}`;
 }
 
+// часы и дата есть и в настройках экрана блокировки
+const mirrors = (id) => document.querySelectorAll(`[data-mirror="${id}"]`);
+
 function writeControl(id, value) {
   if (bool($(id))) $(id).checked = Boolean(value); else $(id).value = value;
   showValue(id);
+  mirrors(id).forEach((m) => { m.value = value; });
 }
 function setControl(id, value) {
   writeControl(id, value);
@@ -104,11 +125,19 @@ for (const id of SAVED) {
   showValue(id);
   $(id).addEventListener('input', () => {
     if (id === 'accent') { writeControl('autoAccent', false); renderer.autoAccent = false; }
+    // до изменения: поле уже новое, а тайминги в состоянии ещё старые
+    if (id === 'offset' || id === 'stretch') remember(id);
     showValue(id);
+    mirrors(id).forEach((m) => { m.value = read(id); });
     apply[id](read(id));
+    if (id === 'effect' || id === 'textAnim') showPlan();
     scheduleSave();
   });
 }
+document.querySelectorAll('[data-mirror]').forEach((m) => m.addEventListener('input', () => {
+  setControl(m.dataset.mirror, m.value);
+  scheduleSave();
+}));
 
 function syncAccent() {
   if (renderer.autoAccent) $('accent').value = `#${renderer.accentRgb.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
@@ -140,7 +169,7 @@ document.querySelector('.tabs').onclick = (e) => { const b = e.target.closest('b
 /* ---------- загрузка трека ---------- */
 
 function setReady() {
-  const ready = Boolean(state.buffer) && !state.processing;
+  const ready = Boolean(state.buffer) && !state.processing && !state.checking;
   $('play').disabled = $('export').disabled = !ready;
   $('search').disabled = !state.original;
 }
@@ -181,6 +210,7 @@ async function loadTrack(file, saved = null) {
   status('ownStatus', '');
   $('showResult').hidden = true;
   renderer.emptyText = '';
+  forgetHistory();
 
   if (!saved) {
     state.coverId++;
@@ -290,9 +320,13 @@ $('soundPresets').onclick = (e) => {
 const editor = createEditor($('lines'), {
   text: (id, text) => editLine(id, { text }),
   label: (id, label) => editLine(id, { label }),
+  color: (id, color) => editLine(id, { color }),
+  font: (id, font) => editLine(id, { font }),
+  side: (id, side) => editLine(id, { side }),
   time: (id, seconds) => { editLine(id, { time: seconds * state.speed, words: null }, true); },
   now: (id) => { editLine(id, { time: audio.currentTime * state.speed, words: null }, true); },
   del: (id) => {
+    remember();
     bake();
     state.lines[state.mode] = state.lines[state.mode].filter((l) => l.id !== id);
     refreshLyrics();
@@ -301,6 +335,7 @@ const editor = createEditor($('lines'), {
   // выбранная строка начинается сейчас: двигаем её и все следующие
   shift: (id) => {
     if (!state.buffer) return;
+    remember();
     bake();
     const list = state.lines[state.mode];
     const i = list.findIndex((l) => l.id === id);
@@ -328,6 +363,7 @@ const timingOf = (mode = state.mode) => ({
   offset: state.timing[mode].offset, stretch: state.timing[mode].stretch / 100, speed: state.speed,
 });
 let finalCache = [];
+let events = []; // когда приходят сообщения в «Переписке»
 const finalLines = (mode = state.mode) => retime(state.lines[mode], timingOf(mode));
 
 function refreshLyrics(redrawEditor = true) {
@@ -335,7 +371,8 @@ function refreshLyrics(redrawEditor = true) {
   finalCache = finalLines();
   const { stretch, speed } = timingOf();
   renderer.setLyrics(buildTimeline(finalCache, state.duration, stretch / speed, number('fill') / 100));
-  if (redrawEditor) editor.render(finalCache.map((l) => ({ id: l.id, time: l.time, text: l.text, label: l.label })));
+  if (redrawEditor) editor.render(finalCache.map((l) => ({ id: l.id, time: l.time, text: l.text, label: l.label, color: l.color, font: l.font, side: l.side })));
+  events = messageEvents(renderer.items);
   autoFragment();
 }
 
@@ -371,6 +408,7 @@ function showShift() {
 }
 // отрицательный сдвиг — текст появляется раньше
 function nudge(step) {
+  remember('offset');
   const v = Math.max(-10, Math.min(10, state.timing[state.mode].offset + step));
   setControl('offset', Math.round(v * 10) / 10);
   scheduleSave();
@@ -379,6 +417,8 @@ $('earlier').onclick = () => nudge(-0.2);
 $('later').onclick = () => nudge(0.2);
 
 function editLine(id, change, reorder = false) {
+  // набор в одном поле подряд отменяется одним шагом
+  remember(reorder ? '' : `${id}:${Object.keys(change)[0]}`);
   bake();
   const list = state.lines[state.mode];
   Object.assign(list.find((l) => l.id === id), change);
@@ -389,6 +429,7 @@ function editLine(id, change, reorder = false) {
 
 function addLine(focus) {
   if (!state.buffer) return;
+  remember();
   bake();
   const [line] = withIds([{ time: audio.currentTime * state.speed, words: null }]);
   const list = state.lines[state.mode];
@@ -418,8 +459,11 @@ $('lyricMode').onclick = (e) => {
 };
 
 // готовые строки (во времени того, что звучит) становятся «своим текстом»
+const looksOf = (l) => (l ? Object.fromEntries(['color', 'font', 'side'].filter((k) => l[k]).map((k) => [k, l[k]])) : {});
 function setOwn(lines) {
-  state.lines.own = withIds(lines.map((l) => ({ ...l, time: l.time * state.speed, words: l.words?.map((w) => ({ ...w, start: w.start * state.speed, end: w.end == null ? null : w.end * state.speed })) || null })));
+  // у строк с прежним текстом сохраняются их цвет и шрифт
+  const old = new Map(state.lines.own.map((l) => [l.text, l]));
+  state.lines.own = withIds(lines.map((l) => ({ ...looksOf(old.get(l.text)), ...l, time: l.time * state.speed, words: l.words?.map((w) => ({ ...w, start: w.start * state.speed, end: w.end == null ? null : w.end * state.speed })) || null })));
   state.timing.own = { offset: 0, stretch: 100 };
   state.textApplied = $('lrc').value;
   setMode('own');
@@ -431,12 +475,14 @@ function applyText() {
   const raw = $('lrc').value;
   const parsed = parseLrc(raw);
   if (parsed.some((l) => l.text)) {
+    remember();
     setOwn(parsed);
     return status('ownStatus', 'Текст применён.');
   }
   const texts = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (!texts.length) return status('ownStatus', 'Напишите текст в поле выше.', true);
   const at = audio.currentTime;
+  remember();
   setOwn(distribute(texts, at > 0.5 && at < state.duration - 10 ? at : Math.min(1, state.from), state.duration - 0.5));
   status('ownStatus', 'Строки расставлены равномерно. Нажмите «Разметить в такт» или поправьте время у строк.');
 }
@@ -445,6 +491,7 @@ $('applyLrc').onclick = applyText;
 $('copyAuto').onclick = () => {
   if (!state.lines.auto.length) return status('ownStatus', 'Найденного текста пока нет.', true);
   const lines = finalLines('auto');
+  remember();
   $('lrc').value = toLrc(lines);
   setOwn(lines);
   status('ownStatus', 'Найденный текст скопирован — правьте как нужно.');
@@ -508,7 +555,7 @@ async function search() {
     select.append(new Option(`${v.synced ? '⏱' : '📄'} ${v.artist} — ${v.title}${v.duration ? ` (${fmt(v.duration)})` : ''}`));
   }
   select.hidden = false;
-  select.onchange = () => useVariant(list[select.selectedIndex]);
+  select.onchange = () => { remember(); useVariant(list[select.selectedIndex]); };
   const best = list[0];
   // совсем другая длина — скорее всего другая версия или другая песня
   if (best.match && (best.diff <= 45 || speedRatio(best))) useVariant(best);
@@ -553,6 +600,7 @@ function useVariant(v) {
 $('fit').onclick = () => {
   if (!state.variant?.duration) return;
   const stretch = Math.max(50, Math.min(200, Math.round((state.original.duration / state.variant.duration) * 200) / 2));
+  remember();
   setControl('stretch', stretch);
   status('lyricStatus', `Тайминги растянуты до ${stretch}%. Если не совпало, верните 100% и поправьте сдвиг.`);
   scheduleSave();
@@ -768,18 +816,30 @@ function mediaTime(now) {
 }
 
 let pausedAt = null;
+let lastT = 0;
 function frame(now) {
   if (!state.exporting) {
-    const t = mediaTime(now);
-    if (state.stopAt != null && t >= state.stopAt) { audio.pause(); state.stopAt = null; }
+    let t = mediaTime(now);
+    // при бесшовном повторе фрагмент играет по кругу, как будет в ленте
+    const wrap = renderer.loop && !audio.paused && t - lastT < 0.5 && lastT < state.to - 0.03 && t >= state.to - 0.03;
+    if (wrap) {
+      audio.currentTime = t = state.from;
+    } else if (state.stopAt != null && t >= state.stopAt) { audio.pause(); state.stopAt = null; }
     // в предпросмотре слышно ту же громкость и затухания, что будут в видео
-    const fade = state.stopAt != null ? fadeGain(t, state.from, state.to, number('fadeIn'), number('fadeOut')) : 1;
+    const fade = state.stopAt != null && !renderer.loop ? fadeGain(t, state.from, state.to, number('fadeIn'), number('fadeOut')) : 1;
     monitor.set((number('volume') / 100) * fade);
+    if (!audio.paused && renderer.kind === 'chat' && read('chatSound')) {
+      for (const e of events) if (e.at > lastT && e.at <= t && t - lastT < 0.5) monitor.ping(e.side, 0.32 * (number('volume') / 100));
+    }
+    lastT = t;
     syncCardVideo(t);
     renderer.introOn = !audio.paused;
     if (!audio.paused) pausedAt = null; else pausedAt ??= now;
     renderer.fxTime = audio.paused && state.buffer ? t + (now - pausedAt) / 1000 : null;
-    renderer.draw(g, state.buffer ? t : 2.2, { guides: $('guides').checked });
+    const guides = $('guides').checked;
+    renderer.draw(g, state.buffer ? t : 2.2, { guides });
+    const mix = state.buffer && !guides ? renderer.loopMix(t) : null;
+    if (mix) renderer.drawMix(g, mix);
     $('now').textContent = fmt(t);
     drawWave();
     if (!state.tap) {
@@ -797,7 +857,7 @@ function startTap() {
   if (!state.buffer || state.processing) return;
   const typed = $('lrc').value;
   const fresh = state.mode === 'own' && typed.trim() && typed !== state.textApplied;
-  let source = fresh ? [] : state.lines[state.mode].filter((l) => tokens(l.text).length).map((l) => ({ text: l.text, label: l.label }));
+  let source = fresh ? [] : state.lines[state.mode].filter((l) => tokens(l.text).length).map((l) => ({ text: l.text, label: l.label, ...looksOf(l) }));
   if (!source.length) {
     source = typed.split(/\r?\n/).map((l) => ({ text: l.replace(/\[[^\]]*\]|<[\d:.,]+>/g, '').trim() })).filter((l) => l.text);
     if (source.length) setMode('own', false);
@@ -851,6 +911,7 @@ function exitTap(save = false) {
   $('tap').hidden = true;
   $('editorBox').hidden = $('syncBox').hidden = false;
   if (save && s.done.length) {
+    remember();
     const last = s.done[s.done.length - 1].time;
     const rest = s.lines.slice(s.i).map((l, i) => ({ ...l, time: last + 3 * (i + 1), words: null }));
     const lines = withIds([...s.done, ...rest].map((l) => ({ ...l, time: l.time * state.speed })));
@@ -883,6 +944,66 @@ document.addEventListener('keydown', (e) => {
 // чтобы пробел во время разметки не нажимал кнопку второй раз
 document.addEventListener('keyup', (e) => { if (state.tap && e.code === 'Space') e.preventDefault(); });
 
+/* ---------- отмена в редакторе текста ---------- */
+
+const history = { past: [], future: [], key: '', at: 0 };
+const capture = () => JSON.stringify({ lines: state.lines, timing: state.timing, mode: state.mode, lrc: $('lrc').value, applied: state.textApplied });
+
+function historyButtons() {
+  $('undo').disabled = !history.past.length;
+  $('redo').disabled = !history.future.length;
+}
+
+// запоминает текст до изменения; key объединяет быстрые правки одного поля
+function remember(key = '') {
+  if (state.restoring) return;
+  const now = performance.now();
+  const same = key && key === history.key && now - history.at < 1500;
+  history.key = key;
+  history.at = now;
+  if (!same) {
+    history.past.push(capture());
+    if (history.past.length > 100) history.past.shift();
+  }
+  history.future = [];
+  historyButtons();
+}
+
+function forgetHistory() {
+  Object.assign(history, { past: [], future: [], key: '' });
+  historyButtons();
+}
+
+function travel(from, to) {
+  if (!from.length || state.tap || state.exporting || state.processing) return;
+  const current = capture();
+  let snap = from.pop();
+  while (snap === current && from.length) snap = from.pop();
+  to.push(current);
+  const d = JSON.parse(snap);
+  Object.assign(state, { lines: d.lines, timing: d.timing, textApplied: d.applied });
+  $('lrc').value = d.lrc;
+  history.key = '';
+  editor.reset();
+  setMode(d.mode);
+  historyButtons();
+  scheduleSave();
+}
+const undo = () => travel(history.past, history.future);
+const redo = () => travel(history.future, history.past);
+$('undo').onclick = undo;
+$('redo').onclick = redo;
+
+document.addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || (e.code !== 'KeyZ' && e.code !== 'KeyY')) return;
+  if (document.querySelector('dialog[open]')) return;
+  // в обычных полях (название, ник, большой текст) работает отмена самого поля
+  const field = e.target.closest?.('input:not([type=range]):not([type=checkbox]):not([type=color]), textarea');
+  if (field && !$('lines').contains(field)) return;
+  e.preventDefault();
+  if (e.code === 'KeyY' || e.shiftKey) redo(); else undo();
+});
+
 /* ---------- файлы ---------- */
 
 $('file').onchange = (e) => { if (e.target.files[0]) loadTrack(e.target.files[0]); e.target.value = ''; };
@@ -906,15 +1027,15 @@ $('coverFile').onchange = (e) => { if (e.target.files[0]) addCover({ blob: e.tar
 /* ---------- стиль и темы ---------- */
 
 function syncView() {
-  const { layout } = renderer.style;
+  const { kind } = renderer;
   view.width = renderer.width;
   view.height = renderer.height;
   const wide = renderer.width > renderer.height;
-  const deck = layout.startsWith('deck');
   document.body.classList.toggle('landscape', wide);
-  document.querySelectorAll('.deck-only').forEach((e) => { e.hidden = !deck; });
-  $('progressRow').hidden = deck;
+  document.body.dataset.kind = kind;
+  document.querySelectorAll('[data-show]').forEach((e) => { e.hidden = !e.dataset.show.split(' ').includes(kind); });
   $('guidesRow').hidden = wide;
+  $('cardTitle').textContent = kind === 'lock' ? 'Обои экрана' : 'Верхняя карточка';
   $('export').textContent = `Создать видео ${renderer.width}×${renderer.height}`;
 }
 
@@ -924,6 +1045,7 @@ function setLayout(layout) {
   $('layouts').querySelectorAll('button').forEach((x) => x.setAttribute('aria-checked', String(x === b)));
   renderer.setStyle({ layout });
   syncView();
+  showPlan();
 }
 $('layouts').onclick = (e) => {
   const b = e.target.closest('button');
@@ -937,6 +1059,7 @@ function applyTheme(theme) {
   // порядок важен: галочка «из обложки» применяется после цвета
   const keys = Object.keys(theme.controls).sort((a, b) => (a === 'autoAccent') - (b === 'autoAccent'));
   for (const key of keys) if (apply[key]) setControl(key, theme.controls[key]);
+  showPlan();
   scheduleSave();
 }
 
@@ -949,6 +1072,8 @@ function themeButton(theme) {
     b.append(dot);
   }
   b.append(theme.name);
+  // тема с платным эффектом помечается так же, как сам эффект
+  if (theme.controls.effect) b.dataset.pro = `fx:${theme.controls.effect}`;
   b.onclick = () => applyTheme(theme);
   return b;
 }
@@ -965,6 +1090,7 @@ function drawPresets() {
     wrap.append(themeButton(p), remove);
     $('presets').append(wrap);
   });
+  showPlan();
 }
 $('presetSave').onclick = () => {
   const list = loadPresets();
@@ -1016,6 +1142,7 @@ async function restore(doc, files) {
     audio.pause();
     state.original = state.buffer = null;
     setLayout(doc.layout);
+    for (const [key, value] of Object.entries(ADDED)) if (!(key in (doc.controls || {}))) setControl(key, value);
     const keys = Object.keys(doc.controls || {}).sort((a, b) => (a === 'autoAccent') - (b === 'autoAccent'));
     for (const key of keys) if (apply[key] && !['offset', 'stretch'].includes(key)) setControl(key, doc.controls[key]);
     clearCard();
@@ -1044,6 +1171,8 @@ async function restore(doc, files) {
     }
   } finally {
     state.restoring = false;
+    forgetHistory();
+    showPlan();
   }
 }
 
@@ -1082,11 +1211,107 @@ $('newProject').onclick = async () => {
   location.reload();
 };
 
+/* ---------- тариф ---------- */
+
+// отмечает платное и ставит водяной знак
+function showPlan() {
+  if (!account.enabled) return;
+  if (!state.exporting) renderer.watermark = account.watermark();
+  document.querySelectorAll('button[data-pro]').forEach((b) => b.classList.toggle('locked', account.locked(b.dataset.pro)));
+  document.querySelectorAll('option[data-pro]').forEach((o) => {
+    o.dataset.name ||= o.textContent;
+    o.textContent = account.locked(o.dataset.pro) ? `${o.dataset.name} — Pro` : o.dataset.name;
+  });
+  accountUI.render();
+}
+
+// платные функции, которые сейчас включены, и замена им на бесплатном тарифе
+function proInUse() {
+  const list = [];
+  const { kind } = renderer;
+  if (account.locked(`style:${kind}`)) {
+    list.push({ text: `Стиль «${$('layouts').querySelector(`[data-layout="${kind}"]`).textContent}»`, fix: () => setLayout('deckTall') });
+  }
+  const effect = $('effect').selectedOptions[0];
+  if (['deck', 'lock'].includes(kind) && account.locked(`fx:${$('effect').value}`)) {
+    list.push({ text: `Эффект «${effect.dataset.name || effect.textContent}»`, fix: () => setControl('effect', 'rain') });
+  }
+  const anim = $('textAnim').selectedOptions[0];
+  if (!['chat', 'lock'].includes(kind) && account.locked(`text:${$('textAnim').value}`)) {
+    list.push({ text: `Анимация «${anim.dataset.name || anim.textContent}»`, fix: () => setControl('textAnim', 'karaoke') });
+  }
+  return list;
+}
+
+function limits() {
+  const list = proInUse();
+  if (account.isPro()) return list;
+  const { freeSeconds, freeDaily } = account.config;
+  const length = state.to - state.from;
+  if (length > freeSeconds + 0.5) {
+    list.push({ text: `Длина ${Math.round(length)} с — бесплатно до ${freeSeconds} с`, fix: () => userFragment(state.from, state.from + account.config.freeSeconds) });
+  }
+  if (account.account?.leftToday === 0) list.push({ text: `Бесплатные видео на сегодня закончились (${freeDaily} в день). Завтра счётчик обновится.` });
+  return list;
+}
+
+async function showLimits(problems) {
+  const fixable = problems.every((p) => p.fix);
+  const answer = await accountUI.gate(fixable ? 'Это доступно в Pro' : 'Лимит бесплатного тарифа', problems.map((p) => p.text), fixable && 'Убрать это и сделать видео бесплатно');
+  if (answer === 'pro') accountUI.open();
+  if (answer === 'fix') {
+    for (const p of problems) p.fix();
+    showPlan();
+    scheduleSave();
+  }
+  return answer === 'fix';
+}
+
+// проверяет тариф и берёт у сервера разрешение; null — видео пока не делаем
+async function permission() {
+  if (!account.enabled) return { id: null };
+  status('exportStatus', 'Проверяю аккаунт…');
+  await account.refresh().catch(() => {});
+  status('exportStatus', '');
+  if (!account.account) {
+    accountUI.open('Войдите или создайте аккаунт, чтобы сделать видео. Это бесплатно.');
+    return null;
+  }
+  let problems = limits();
+  if (problems.length && !(await showLimits(problems))) return null;
+  try {
+    const permit = await account.permit(state.to - state.from);
+    // сервер мог ответить, что Pro уже закончился
+    problems = proInUse();
+    if (!problems.length) return permit;
+    await account.cancel(permit.id);
+    if (await showLimits(problems)) return permission();
+  } catch (e) {
+    if (!(e instanceof AccountError)) throw e;
+    if (e.code === 'auth') accountUI.open('Войдите в аккаунт снова.');
+    else if (e.code === 'daily') await showLimits([{ text: e.message }]);
+    else status('exportStatus', e.message, true);
+  }
+  return null;
+}
+
+if (account.enabled) {
+  let asked = 0;
+  const refresh = () => {
+    if (state.exporting || Date.now() - asked < 60000) return;
+    asked = Date.now();
+    account.refresh().catch(() => {});
+  };
+  window.addEventListener('focus', refresh);
+  setInterval(refresh, 600000);
+  refresh();
+}
+
 /* ---------- экспорт ---------- */
 
 let abort = null;
 $('export').onclick = async () => {
-  if (!state.buffer || state.exporting || state.processing) return;
+  if (!state.buffer || state.exporting || state.processing || state.checking) return;
   exitTap();
   if (!renderer.items.length && !state.allowNoText) {
     state.allowNoText = true;
@@ -1094,10 +1319,28 @@ $('export').onclick = async () => {
     return;
   }
   audio.pause();
+  state.checking = true;
+  $('export').disabled = true;
+  let permit = null;
+  try {
+    permit = await permission();
+  } catch (e) {
+    console.error(e);
+    status('exportStatus', `Не получилось проверить аккаунт: ${e.message}`, true);
+  } finally {
+    state.checking = false;
+    setReady();
+  }
+  if (!permit || !state.buffer || state.processing) {
+    account.cancel(permit?.id).catch(() => {});
+    return;
+  }
+  audio.pause();
   renderer.cardMedia?.pause?.();
   $('busyView').width = renderer.width / 4;
   $('busyView').height = renderer.height / 4;
   state.exporting = true;
+  renderer.watermark = account.watermark();
   renderer.introOn = true;
   renderer.fxTime = null;
   abort = new AbortController();
@@ -1107,21 +1350,29 @@ $('export').onclick = async () => {
   status('exportStatus', '');
   const small = $('busyView').getContext('2d');
   let lock = null;
+  let done = false;
   try { lock = await navigator.wakeLock?.request('screen'); } catch { /* не критично */ }
   try {
     const res = await exportVideo({
       renderer, buffer: state.buffer, from: state.from, to: state.to, fps: number('fps'), signal: abort.signal,
-      sound: { volume: number('volume') / 100, fadeIn: number('fadeIn'), fadeOut: number('fadeOut') },
+      sound: {
+        volume: number('volume') / 100, fadeIn: number('fadeIn'), fadeOut: number('fadeOut'),
+        loop: renderer.loop ? loopSpan(state.from, state.to) : 0,
+        events: renderer.kind === 'chat' && read('chatSound') ? events : [],
+        eventVolume: 0.32 * (number('volume') / 100),
+      },
       onProgress: (p, canvas) => {
         $('bar').value = p;
         $('busyText').textContent = p >= 1 ? 'Сохраняю файл…' : `${Math.round(p * 100)}%`;
         small.drawImage(canvas, 0, 0, $('busyView').width, $('busyView').height);
       },
     });
+    done = true;
     if (state.resultUrl) URL.revokeObjectURL(state.resultUrl);
     state.resultUrl = URL.createObjectURL(res.blob);
     const name = `${baseName()}.${res.ext}`;
     state.result = new File([res.blob], name, { type: res.blob.type });
+    $('resultVideo').loop = renderer.loop;
     $('resultVideo').src = state.resultUrl;
     $('download').href = state.resultUrl;
     $('download').download = name;
@@ -1137,6 +1388,9 @@ $('export').onclick = async () => {
     lock?.release().catch(() => {});
     state.exporting = false;
     if ($('busy').open) $('busy').close();
+    // несобранное видео не тратит дневной лимит
+    if (!done) account.cancel(permit.id).catch(() => {});
+    showPlan();
   }
 };
 $('cancel').onclick = () => abort?.abort();
@@ -1190,7 +1444,8 @@ for (const id of SAVED) if (!['speed', 'reverb', 'bass', 'offset', 'stretch', 'f
 syncView();
 markSound();
 drawPresets();
-document.fonts.load('800 80px "Inter Variable"', 'AaЯяӘә').finally(() => { renderer.dirty = true; });
+loadFonts().then(() => { renderer.dirty = true; });
+showPlan();
 document.fonts.ready.then(() => { renderer.dirty = true; });
 requestAnimationFrame(frame);
 window.__pripev = { renderer, state };

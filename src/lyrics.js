@@ -139,7 +139,7 @@ export function buildTimeline(lines, duration, pace = 1, fill = 1) {
       });
     }
     const custom = (l.label || '').trim();
-    items.push({ time: l.time, end, text: plain, words, label: custom || keyWord(list), custom: Boolean(custom) });
+    items.push({ time: l.time, end, text: plain, words, label: custom || keyWord(list), custom: Boolean(custom), color: l.color, font: l.font, side: l.side });
     quietFrom = silentNext ? Math.max(next.time, end) : end;
     if (silentNext) i++;
   }

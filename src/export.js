@@ -57,8 +57,14 @@ async function encode({ renderer, buffer, from, to, fps, sound: mixing, onProgre
         await track.add(chunk(audio, fed, audio.sampleRate));
         fed += audio.sampleRate;
       }
-      await renderer.prepare(from + i / fps);
-      renderer.draw(g, from + i / fps);
+      const t = from + i / fps;
+      await renderer.prepare(t);
+      renderer.draw(g, t);
+      const mix = renderer.loopMix(t);
+      if (mix) {
+        await renderer.prepare(mix.at);
+        renderer.drawMix(g, mix);
+      }
       await video.add(i / fps, 1 / fps);
       if (i % 6 === 0) { onProgress(i / frames, canvas); await breathe(); }
     }
@@ -104,7 +110,10 @@ async function recordRealtime({ renderer, buffer, from, to, fps, sound, onProgre
   await new Promise((resolve) => {
     const tick = () => {
       const t = Math.max(0, ac.currentTime - t0);
-      renderer.draw(g, from + Math.min(t, len));
+      const at = from + Math.min(t, len);
+      renderer.draw(g, at);
+      const mix = renderer.loopMix(at);
+      if (mix) renderer.drawMix(g, mix);
       onProgress(Math.min(1, t / len), canvas);
       if (signal.aborted || t >= len) resolve(); else requestAnimationFrame(tick);
     };

@@ -1,5 +1,8 @@
 // Построчный редактор текста. Тексты вставляются только через value/textContent.
 import { tokens, joinTokens, formatTime, parseTime, keyWord } from './lyrics.js';
+import { FONTS } from './fonts.js';
+
+const SWATCHES = ['#ff5468', '#ff9a3d', '#ffd84a', '#5ee58a', '#2fe3c6', '#5a8dff', '#b98cff', '#ff7ad9'];
 
 function el(tag, props = {}, ...children) {
   const node = Object.assign(document.createElement(tag), props);
@@ -39,8 +42,33 @@ export function createEditor(list, actions) {
       shiftButton(),
       el('p', { className: 'hint', textContent: words.length ? 'Цветные слова: нажмите на нужные' : 'Пустая строка — это проигрыш' }),
       box,
-      el('label', { textContent: 'Слово под кругом' }, label)));
+      ...(words.length ? [looks(data)] : []),
+      el('label', { className: 'ring-row', textContent: 'Слово под кругом' }, label)));
   };
+
+  // цвет, шрифт и автор строки
+  const looks = (data) => {
+    const colors = el('div', { className: 'swatches', role: 'group', ariaLabel: 'Цвет строки' });
+    const swatch = (value, title) => {
+      const b = el('button', { type: 'button', className: 'swatch', title });
+      b.dataset.color = value;
+      b.setAttribute('aria-label', title);
+      if (value) b.style.background = value;
+      return b;
+    };
+    colors.append(swatch('', 'Обычный цвет'), ...SWATCHES.map((c) => swatch(c, `Цвет ${c}`)),
+      el('input', { type: 'color', className: 'color', value: data.color || '#ffffff', title: 'Свой цвет', ariaLabel: 'Свой цвет строки' }));
+    mark(colors, data.color);
+    const font = el('select', { className: 'font' }, new Option('как у всего текста', ''), ...Object.entries(FONTS).map(([key, f]) => new Option(f.name, key)));
+    font.value = data.font || '';
+    const side = el('select', { className: 'side' }, new Option('по очереди', ''), new Option('собеседник', 'them'), new Option('я', 'me'));
+    side.value = data.side || '';
+    return el('div', { className: 'looks' },
+      el('p', { className: 'hint', textContent: 'Цвет строки' }), colors,
+      el('label', { textContent: 'Шрифт строки' }, font),
+      el('label', { className: 'side-row', textContent: 'Кто пишет в переписке' }, side));
+  };
+  const mark = (box, color) => box.querySelectorAll('.swatch').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.color === (color || ''))));
 
   const open = (row) => {
     if (!row || openId === Number(row.dataset.id)) return;
@@ -91,7 +119,7 @@ export function createEditor(list, actions) {
   }
 
   // раскрываем только по полям: если раскрывать по кнопкам, список сдвинется и клик пропадёт
-  list.addEventListener('focusin', (e) => { if (e.target.tagName === 'INPUT') open(e.target.closest('li')); });
+  list.addEventListener('focusin', (e) => { if (e.target.tagName === 'INPUT' && e.target.type !== 'color') open(e.target.closest('li')); });
 
   list.addEventListener('input', (e) => {
     const row = e.target.closest('li');
@@ -107,6 +135,16 @@ export function createEditor(list, actions) {
     } else if (e.target.classList.contains('label')) {
       data.label = e.target.value;
       actions.label(data.id, data.label);
+    } else if (e.target.classList.contains('color')) {
+      data.color = e.target.value;
+      mark(e.target.parentElement, data.color);
+      actions.color(data.id, data.color);
+    } else if (e.target.classList.contains('font')) {
+      data.font = e.target.value;
+      actions.font(data.id, data.font);
+    } else if (e.target.classList.contains('side')) {
+      data.side = e.target.value;
+      actions.side(data.id, data.side);
     }
   });
 
@@ -129,6 +167,12 @@ export function createEditor(list, actions) {
     const id = Number(row.dataset.id);
     if (b.dataset.act) { actions[b.dataset.act](id); return; }
     const data = rows.find((r) => r.id === id);
+    if (b.dataset.color !== undefined) {
+      data.color = b.dataset.color;
+      mark(b.parentElement, data.color);
+      actions.color(id, data.color);
+      return;
+    }
     const words = tokens(data.text);
     const w = words[Number(b.dataset.token)];
     w.mark = !w.mark;
@@ -140,6 +184,8 @@ export function createEditor(list, actions) {
 
   return {
     render,
+    // пересоздать строки целиком (после отмены меняются и скрытые поля)
+    reset() { list.textContent = ''; },
     focus(id) { list.querySelector(`li[data-id="${id}"] .text`)?.focus(); },
     highlight(id) {
       if (id === currentId) return;

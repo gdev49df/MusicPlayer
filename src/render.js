@@ -2,6 +2,8 @@
 // поэтому предпросмотр и экспорт выглядят одинаково.
 
 import { drawDeck, deckGeometry } from './deck.js';
+import { drawScene } from './scenes.js';
+import { fontOf, cssFont } from './fonts.js';
 import { BANDS } from './audio.js';
 
 // размер вертикальных макетов
@@ -25,7 +27,20 @@ const LAYOUTS = {
   lyrics: { box: [80, 465, 880, 1470], anchor: 665, size: 78, gap: 54 },
   cover: { box: [80, 1130, 880, 1540], anchor: 1215, size: 58, gap: 34 },
   text: { box: [80, 330, 880, 1500], anchor: 760, size: 96, gap: 62 },
+  chat: { scene: true, box: [86, 330, 726, 1470], anchor: 800, size: 50, gap: 0 },
+  lock: { scene: true, box: [96, 780, 886, 1570], anchor: 900, size: 48, gap: 0 },
+  vinyl: { scene: true, center: true, box: [90, 1220, 920, 1600], anchor: 1330, size: 60, gap: 30 },
+  cassette: { scene: true, center: true, box: [90, 1060, 920, 1600], anchor: 1200, size: 68, gap: 38 },
 };
+
+// цвет строки вида #rrggbb с прозрачностью
+export const alphaOf = (color, a) => {
+  const n = parseInt(color.slice(1), 16);
+  return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
+};
+export const hexColor = (c) => (/^#[0-9a-f]{6}$/i.test(c || '') ? c : '');
+// пружинка с лёгким перелётом: 0 → 1
+export const pop = (age) => (age <= 0 ? 0 : 1 - Math.exp(-11 * age) * Math.cos(13 * age));
 
 const canvas = (w, h) => {
   const c = document.createElement('canvas');
@@ -116,6 +131,25 @@ function ellipsis(g, text, max) {
   return `${chars.join('').trimEnd()}…`;
 }
 
+// длина перехода при бесшовном повторе
+export const loopSpan = (from, to) => Math.min(1.2, Math.max(0.2, (to - from) / 4));
+
+// список для режима «одно слово»: короткие предлоги склеиваются со следующим словом
+function bigWords(items) {
+  const out = [];
+  for (const it of items) {
+    if (it.dots) continue;
+    let held = null;
+    it.words.forEach((w, i) => {
+      const word = held ? { ...w, text: `${held.text} ${w.text}`, start: held.start, mark: held.mark || w.mark } : { ...w };
+      held = null;
+      if ([...word.text].length <= 2 && i < it.words.length - 1) held = word;
+      else out.push({ ...word, color: it.color, font: it.font });
+    });
+  }
+  return out;
+}
+
 export const fmt = (s) => {
   s = Math.max(0, Math.floor(s));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -123,7 +157,10 @@ export const fmt = (s) => {
 
 export class Renderer {
   constructor() {
-    this.style = { layout: 'deck', scale: 1, karaoke: true, blur: true, progress: true, motion: true, nick: '' };
+    this.style = { layout: 'deck', scale: 1, karaoke: true, blur: true, progress: true, motion: true, nick: '', font: 'inter', textAnim: 'karaoke' };
+    this.watermark = ''; // подпись бесплатного тарифа
+    this.loop = false; // конец фрагмента переходит в начало
+    this.chat = { name: '' };
     this.meta = { title: '', artist: '' };
     this.items = [];
     this.duration = 0;
@@ -161,11 +198,13 @@ export class Renderer {
     this.accent = `rgb(${rgb.join(',')})`;
   }
 
+  get kind() { return this.style.layout.startsWith('deck') ? 'deck' : this.style.layout; }
+
   // для своего видео в карточке: дождаться нужного кадра перед отрисовкой
   prepare(t) {
     const v = this.cardMedia;
-    if (!v?.duration || !LAYOUTS[this.style.layout].deck) return null;
-    const at = t % v.duration;
+    if (!v?.duration || !['deck', 'lock'].includes(this.kind)) return null;
+    const at = ((t % v.duration) + v.duration) % v.duration;
     if (Math.abs(v.currentTime - at) < 0.001) return null;
     return new Promise((resolve) => {
       const done = () => { clearTimeout(timer); v.removeEventListener('seeked', done); resolve(); };
@@ -205,18 +244,21 @@ export class Renderer {
       this.G = deckGeometry(this.style.layout, this.deck.show);
       L = { ...L, box: this.G.box, anchor: this.G.anchor };
     }
-    const size = Math.round(L.size * this.style.scale);
-    const lh = Math.round(size * 1.2);
+    const sizeOf = (spec) => Math.round(L.size * this.style.scale * spec.scale);
     const maxW = L.box[2] - L.box[0];
-    g.font = `800 ${size}px ${FONT}`;
-    const space = g.measureText(' ').width;
     let y = 0;
     this.lines = this.items.map((it) => {
+      const spec = fontOf(it.font, this.style.font);
+      const size = sizeOf(spec);
+      const lh = Math.round(size * 1.2);
       if (it.dots) {
-        const line = { ...it, y, h: size * 0.8, rows: [] };
+        const line = { ...it, y, h: size * 0.8, rows: [], size };
         y += line.h + L.gap;
         return line;
       }
+      const font = cssFont(spec, size);
+      g.font = font;
+      const space = g.measureText(' ').width;
       const rows = [[]];
       let x = 0;
       for (const w of it.words) {
@@ -244,13 +286,20 @@ export class Renderer {
           x += width + space;
         }
       }
-      const line = { ...it, y, h: rows.length * lh, rows, cache: [] };
+      let width = 0;
+      for (const row of rows) {
+        const last = row[row.length - 1];
+        const rw = last ? last.x + last.w : 0;
+        width = Math.max(width, rw);
+        if (L.center) for (const w of row) w.x += (maxW - rw) / 2;
+      }
+      const line = { ...it, y, h: rows.length * lh, rows, cache: [], font, size, lh, width, color: hexColor(it.color) };
       y += line.h + L.gap;
       return line;
     });
+    this.bigWords = bigWords(this.items);
     this.L = L;
-    this.size = size;
-    this.lh = lh;
+    this.size = sizeOf(fontOf(this.style.font));
     this.dirty = false;
   }
 
@@ -260,17 +309,18 @@ export class Renderer {
     const maxW = this.L.box[2] - this.L.box[0];
     const c = canvas(maxW + PAD * 2, line.h + PAD * 2);
     const g = c.getContext('2d');
-    g.font = `800 ${this.size}px ${FONT}`;
+    g.font = line.font;
     g.textBaseline = 'middle';
-    g.fillStyle = '#fff';
+    const color = line.color || '#fff';
+    g.fillStyle = color;
     const far = level ? 4000 : 0;
     if (level) {
       // размытие через тень: работает и в Safari, где нет ctx.filter
-      g.shadowColor = '#fff';
+      g.shadowColor = color;
       g.shadowBlur = level * BLUR_STEP * 2;
       g.shadowOffsetX = far;
     }
-    line.rows.forEach((row, r) => row.forEach((w) => g.fillText(w.text, PAD + w.x - far, PAD + this.lh * (r + 0.5))));
+    line.rows.forEach((row, r) => row.forEach((w) => g.fillText(w.text, PAD + w.x - far, PAD + line.lh * (r + 0.5))));
     line.cache[level] = c;
     return c;
   }
@@ -302,22 +352,70 @@ export class Renderer {
         g.textBaseline = 'middle';
         g.fillText(this.style.nick, this.width - 66, this.height - 34);
       }
-      if (guides && this.style.layout === 'deckTall') this.drawGuides(g);
-      g.restore();
-      return;
+    } else {
+      if (this.L.scene) drawScene(this, g, t);
+      else {
+        this.drawBackground(g, t);
+        this.drawHeader(g, t);
+        this.drawLyrics(g, t);
+        if (this.style.progress) this.drawProgress(g, t);
+      }
+      if (this.style.nick) {
+        g.font = `600 30px ${FONT}`;
+        g.fillStyle = 'rgba(255,255,255,.5)';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        // в переписке и на экране блокировки верх занят
+        const y = { chat: 1640, lock: 1655, cassette: 250 }[this.style.layout] || 140;
+        g.fillText(this.style.nick, W / 2, y);
+      }
     }
-    this.drawBackground(g, t);
-    this.drawHeader(g, t);
-    this.drawLyrics(g, t);
-    if (this.style.progress) this.drawProgress(g, t);
-    if (this.style.nick) {
-      g.font = `600 30px ${FONT}`;
-      g.fillStyle = 'rgba(255,255,255,.5)';
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      g.fillText(this.style.nick, W / 2, 140);
-    }
-    if (guides) this.drawGuides(g);
+    this.drawWatermark(g);
+    if (guides && this.width < this.height) this.drawGuides(g);
+    g.restore();
+  }
+
+  // бесшовный повтор: в конце фрагмента поверх кадра проступает то, что было перед его началом,
+  // и последний кадр совпадает с первым
+  loopMix(t) {
+    if (!this.loop) return null;
+    const { from, to } = this.clip;
+    const x = loopSpan(from, to);
+    const k = (t - (to - x)) / x;
+    return k > 0 && k <= 1.001 ? { at: from - (to - t), alpha: smooth(k) } : null;
+  }
+
+  drawMix(g, mix) {
+    this.mixCanvas ||= canvas(1, 1);
+    const c = this.mixCanvas;
+    if (c.width !== this.width || c.height !== this.height) { c.width = this.width; c.height = this.height; }
+    this.draw(c.getContext('2d', { alpha: false }), mix.at);
+    g.save();
+    g.globalAlpha = mix.alpha;
+    g.drawImage(c, 0, 0);
+    g.restore();
+  }
+
+  drawWatermark(g) {
+    if (!this.watermark) return;
+    const wide = this.width > this.height;
+    const right = wide ? this.width - 66 : 1014;
+    const y = wide ? this.height - 86 : this.style.layout === 'chat' ? 292 : 162;
+    g.save();
+    g.globalAlpha = 0.72;
+    g.shadowColor = 'rgba(0,0,0,.65)';
+    g.shadowBlur = 12;
+    g.font = `800 ${wide ? 30 : 36}px ${FONT}`;
+    g.textAlign = 'right';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#fff';
+    g.fillText(this.watermark, right, y);
+    const x = right - g.measureText(this.watermark).width - 46;
+    [22, 30, 17].forEach((width, i) => {
+      g.beginPath();
+      g.roundRect(x, y - 15 + i * 11, width, 7, 3.5);
+      g.fill();
+    });
     g.restore();
   }
 
@@ -401,7 +499,8 @@ export class Renderer {
   drawLyrics(g, t) {
     const L = this.L;
     const lines = this.lines;
-    const [x0, top, , bottom] = L.box;
+    const [x0, top, x1, bottom] = L.box;
+    const anim = this.style.textAnim;
     g.textBaseline = 'middle';
     g.textAlign = 'left';
     if (!lines.length) {
@@ -413,6 +512,10 @@ export class Renderer {
       g.fillText(this.emptyText, (L.box[0] + L.box[2]) / 2, L.anchor + 80);
       return;
     }
+    if (anim === 'big') { this.drawBig(g, t); return; }
+    // слова появляются по ходу пения, поэтому будущие строки не показываем
+    const reveal = anim === 'pop' || anim === 'type';
+    const middle = L.center ? (x1 - x0) / 2 : 0;
     // позиция прокрутки с лёгким «каскадом» для нижних строк
     let active = -1;
     for (let i = 0; i < lines.length && lines[i].time <= t; i++) active = i;
@@ -446,7 +549,8 @@ export class Renderer {
       const outAt = next ? next.time : Math.max(line.end + 1.5, this.duration);
       const on = smooth((t - line.time + 0.15) / 0.3) * (1 - smooth((t - outAt + 0.18) / 0.35));
 
-      if (line.dots) { this.drawDots(g, line, x0, y, t, on * edge * this.lyricAlpha); continue; }
+      if (line.dots) { this.drawDots(g, line, L.center ? x0 + middle - line.size * 0.75 : x0, y, t, on * edge * this.lyricAlpha); continue; }
+      if (reveal && t < line.time - 0.15) continue;
 
       const dist = Math.abs(i - pos);
       const past = i < pos ? clamp(pos - i) : 0;
@@ -455,45 +559,54 @@ export class Renderer {
       const base = L.deck ? mix(mix(0.5 * clamp(1 - (dist - 1) * 0.27, 0.2, 1), 0.82, upcoming), 0, past) : mix(0.36, 0.17, past);
       const scale = 0.965 + 0.035 * on;
       g.save();
-      g.translate(x0, y + line.h / 2);
+      g.translate(x0 + middle, y + line.h / 2);
       g.scale(scale, scale);
-      g.translate(0, -line.h / 2);
-      if (on < 0.999) {
+      g.translate(-middle, -line.h / 2);
+      // доля «ушедшей» строки: пока слова появляются, неподвижную копию не рисуем
+      const gone = reveal ? smooth((t - outAt + 0.18) / 0.35) : 1 - on;
+      if (gone > 0.001) {
         const level = this.style.blur ? clamp(L.deck ? (dist - 0.8) * 1.15 : dist - 0.15, 0, 4) * (1 - upcoming) : 0;
         const lo = Math.floor(level);
         const k = level - lo;
-        const a = base * edge * (1 - on) * this.lyricAlpha;
+        const a = base * edge * gone * this.lyricAlpha;
         if (k < 0.99) { g.globalAlpha = a * (1 - k); g.drawImage(this.lineImage(line, lo), -PAD, -PAD); }
         if (k > 0.01) { g.globalAlpha = a * Math.min(1, k * 1.15); g.drawImage(this.lineImage(line, lo + 1), -PAD, -PAD); }
       }
-      if (on > 0.001) this.drawActive(g, line, t, on * edge * this.lyricAlpha);
+      const live = reveal ? 1 - gone : on;
+      if (live > 0.001) this.drawActive(g, line, t, live * edge * this.lyricAlpha);
       g.restore();
     }
     g.globalAlpha = 1;
   }
 
   drawActive(g, line, t, alpha) {
-    g.font = `800 ${this.size}px ${FONT}`;
+    g.font = line.font;
     g.globalAlpha = alpha;
+    const anim = this.style.textAnim;
+    if (anim === 'pop') { this.drawPop(g, line, t, alpha); return; }
+    if (anim === 'type') { this.drawType(g, line, t); return; }
+    const full = line.color || '#fff';
+    const dim = alphaOf(line.color || '#ffffff', 0.34);
     line.rows.forEach((row, r) => {
-      const cy = this.lh * (r + 0.5);
-      if (this.L.deck) { this.drawAccentRow(g, row, cy, t); return; }
+      const cy = line.lh * (r + 0.5);
+      if (this.L.deck) { this.drawAccentRow(g, row, cy, t, line.color); return; }
       for (const w of row) {
+        const tint = w.mark ? this.accent : full;
         if (!this.style.karaoke) {
-          g.fillStyle = w.mark ? this.accent : '#fff';
+          g.fillStyle = tint;
           g.fillText(w.text, w.x, cy);
           continue;
         }
         const p = clamp((t - w.start) / Math.max(0.05, w.end - w.start));
-        const lift = -this.size * 0.045 * smooth((t - w.start) / Math.max(0.35, w.end - w.start));
-        if (p <= 0) g.fillStyle = 'rgba(255,255,255,.34)';
-        else if (p >= 1) g.fillStyle = '#fff';
+        const lift = -line.size * 0.045 * smooth((t - w.start) / Math.max(0.35, w.end - w.start));
+        if (p <= 0) g.fillStyle = dim;
+        else if (p >= 1) g.fillStyle = full;
         else {
-          const soft = this.size * 0.55;
+          const soft = line.size * 0.55;
           const edge = w.x - soft + (w.w + soft) * p;
           const gr = g.createLinearGradient(edge, 0, edge + soft, 0);
-          gr.addColorStop(0, '#fff');
-          gr.addColorStop(1, 'rgba(255,255,255,.34)');
+          gr.addColorStop(0, full);
+          gr.addColorStop(1, dim);
           g.fillStyle = gr;
         }
         g.fillText(w.text, w.x, cy + lift);
@@ -502,32 +615,141 @@ export class Renderer {
   }
 
   // поющееся слово заливается акцентным цветом и светится
-  drawAccentRow(g, row, cy, t) {
-    const dim = 'rgba(255,255,255,.38)';
+  drawAccentRow(g, row, cy, t, color) {
+    const dim = color ? alphaOf(color, 0.42) : 'rgba(255,255,255,.38)';
     const [R, G, B] = this.accentRgb;
     for (const w of row) {
       const p = this.style.karaoke ? clamp((t - w.start) / Math.max(0.05, w.end - w.start)) : 1;
+      const own = color && !w.mark ? color : '';
       g.shadowBlur = 0;
       if (p <= 0) g.fillStyle = dim;
       else if (p < 1) {
+        const lit = own || this.accent;
         const gr = g.createLinearGradient(w.x, 0, w.x + w.w, 0);
-        gr.addColorStop(0, this.accent);
-        gr.addColorStop(p, this.accent);
+        gr.addColorStop(0, lit);
+        gr.addColorStop(p, lit);
         gr.addColorStop(Math.min(1, p + 0.12), dim);
         gr.addColorStop(1, dim);
         g.fillStyle = gr;
-        g.shadowColor = `rgba(${R},${G},${B},.8)`;
+        g.shadowColor = own ? alphaOf(own, 0.8) : `rgba(${R},${G},${B},.8)`;
         g.shadowBlur = 26;
       } else {
         const k = w.mark || !this.style.karaoke ? 0 : smooth((t - w.end) / 0.25);
         const base = w.mark ? [R, G, B] : this.style.karaoke ? [R, G, B] : [255, 255, 255];
-        g.fillStyle = `rgb(${base.map((v) => Math.round(mix(v, 255, k))).join(',')})`;
-        g.shadowColor = w.mark ? `rgba(${R},${G},${B},.8)` : 'rgba(255,255,255,.55)';
+        g.fillStyle = own || `rgb(${base.map((v) => Math.round(mix(v, 255, k))).join(',')})`;
+        g.shadowColor = own ? alphaOf(own, 0.6) : w.mark ? `rgba(${R},${G},${B},.8)` : 'rgba(255,255,255,.55)';
         g.shadowBlur = 20;
       }
       g.fillText(w.text, w.x, cy);
     }
     g.shadowBlur = 0;
+  }
+
+  // цвет только что появившегося слова: в «Панели» вспыхивает акцентом и белеет
+  freshColor(line, w, age) {
+    if (w.mark) return this.accent;
+    if (line.color) return line.color;
+    if (!this.L.deck) return '#fff';
+    const k = smooth((age - 0.35) / 0.4);
+    return `rgb(${this.accentRgb.map((v) => Math.round(mix(v, 255, k))).join(',')})`;
+  }
+
+  // слова выпрыгивают по одному
+  drawPop(g, line, t, alpha) {
+    line.rows.forEach((row, r) => {
+      const cy = line.lh * (r + 0.5);
+      for (const w of row) {
+        const age = t - w.start + 0.06;
+        if (age <= 0) continue;
+        const k = pop(age);
+        g.save();
+        g.globalAlpha = alpha * smooth(age / 0.12);
+        g.translate(w.x + w.w / 2, cy + (1 - k) * line.size * 0.45);
+        g.scale(0.35 + 0.65 * k, 0.35 + 0.65 * k);
+        g.fillStyle = this.freshColor(line, w, age);
+        if (this.L.deck || w.mark) {
+          g.shadowColor = g.fillStyle;
+          g.shadowBlur = 22 * (1 - smooth((age - 0.4) / 0.6)) + 4;
+        }
+        g.fillText(w.text, -w.w / 2, 0);
+        g.restore();
+      }
+    });
+  }
+
+  // печатная машинка: буквы набираются в темпе пения, за ними мигает курсор
+  drawType(g, line, t) {
+    let cursor = null;
+    let typing = false;
+    line.rows.forEach((row, r) => {
+      const cy = line.lh * (r + 0.5);
+      for (const w of row) {
+        if (!cursor) cursor = [w.x, cy];
+        const age = t - w.start + 0.06;
+        if (age <= 0) continue;
+        const chars = [...w.text];
+        const span = Math.max(0.08, (w.end - w.start) * 0.85);
+        const n = Math.min(chars.length, 1 + Math.floor((age / span) * chars.length));
+        const part = chars.slice(0, n).join('');
+        g.fillStyle = this.freshColor(line, w, age);
+        g.fillText(part, w.x, cy);
+        cursor = [w.x + g.measureText(part).width + line.size * 0.08, cy];
+        typing = n < chars.length;
+      }
+    });
+    const next = this.lines.find((l) => !l.dots && l.time > line.time);
+    if (cursor && (!next || t < next.time - 0.15) && (typing || Math.floor(t * 2.4) % 2 === 0)) {
+      g.fillStyle = this.accent;
+      g.fillRect(cursor[0], cursor[1] - line.size * 0.48, line.size * 0.09, line.size * 0.94);
+    }
+  }
+
+  // одно огромное слово в такт
+  drawBig(g, t) {
+    const L = this.L;
+    const [x0, top, x1, bottom] = L.box;
+    const cx = (x0 + x1) / 2;
+    const cy = L.deck ? (top + bottom) / 2 : L.center ? (top + bottom) / 2 - 20 : this.style.layout === 'cover' ? (top + bottom) / 2 : 1020;
+    const list = this.bigWords;
+    let i = -1;
+    while (i + 1 < list.length && list[i + 1].start <= t + 0.06) i++;
+    const dots = this.lines.find((l) => l.dots && t >= l.time && t < l.end);
+    if (dots) {
+      g.textAlign = 'left';
+      this.drawDots(g, dots, cx - dots.size * 0.75, cy - dots.h / 2, t, smooth((t - dots.time) / 0.4) * (1 - smooth((t - dots.end + 0.3) / 0.3)) * this.lyricAlpha);
+      return;
+    }
+    if (i < 0) return;
+    const beat = this.style.motion ? this.beat(t) : 0;
+    const paint = (w, scale, alpha) => {
+      if (alpha <= 0.01) return;
+      const spec = fontOf(w.font, this.style.font);
+      let size = Math.round(L.size * 3 * this.style.scale * spec.scale);
+      const text = w.text.toUpperCase();
+      g.font = cssFont(spec, size);
+      const width = g.measureText(text).width;
+      const room = (x1 - x0) * 0.92;
+      if (width > room) { size = Math.floor((size * room) / width); g.font = cssFont(spec, size); }
+      g.save();
+      g.globalAlpha = alpha * this.lyricAlpha;
+      g.translate(cx, cy);
+      g.scale(scale, scale);
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      const color = hexColor(w.color) || (w.mark ? this.accent : '#fff');
+      g.fillStyle = color;
+      g.shadowColor = w.color || w.mark ? color : this.accent;
+      g.shadowBlur = 30 + beat * 40;
+      g.fillText(text, 0, 0);
+      g.restore();
+    };
+    const w = list[i];
+    const age = t - w.start + 0.06;
+    const next = list[i + 1];
+    const until = Math.min(next ? next.start : Infinity, w.end + 1);
+    const prev = list[i - 1];
+    if (prev && age < 0.2 && w.start - prev.end < 0.6) paint(prev, 1 + age * 1.6, 0.45 * (1 - age / 0.2));
+    paint(w, (0.5 + 0.5 * pop(age)) * (1 + beat * 0.07), smooth(age / 0.08) * (1 - smooth((t - until) / 0.3)));
   }
 
   drawDots(g, line, x, y, t, alpha) {
@@ -536,20 +758,21 @@ export class Renderer {
     const p = clamp((t - line.time) / len);
     const breathe = 1 + Math.sin((t - line.time) * 2.4) * 0.09;
     const big = this.L.deck ? 1.35 : 1;
-    const r = this.size * 0.15 * big * breathe * (1 - smooth((t - line.end + 0.35) / 0.35) * 0.7);
+    const size = line.size;
+    const r = size * 0.15 * big * breathe * (1 - smooth((t - line.end + 0.35) / 0.35) * 0.7);
     for (let i = 0; i < 3; i++) {
       g.globalAlpha = alpha * mix(0.28, 1, clamp(p * 3 - i));
       g.fillStyle = '#fff';
       g.beginPath();
-      g.arc(x + this.size * 0.22 * big + i * this.size * 0.52 * big, y + line.h / 2, r, 0, Math.PI * 2);
+      g.arc(x + size * 0.22 * big + i * size * 0.52 * big, y + line.h / 2, r, 0, Math.PI * 2);
       g.fill();
     }
     if (this.L.deck && line.end - t > 0.6) { // сколько ещё ждать
       g.globalAlpha = alpha * 0.6;
-      g.font = `600 ${Math.round(this.size * 0.38)}px ${FONT}`;
+      g.font = `600 ${Math.round(size * 0.38)}px ${FONT}`;
       g.textAlign = 'left';
       g.textBaseline = 'middle';
-      g.fillText(`${this.deck.labels.pause || 'проигрыш'} · ${Math.ceil(line.end - t)} с`, x + this.size * 2.45, y + line.h / 2 + 2);
+      g.fillText(`${this.deck.labels.pause || 'проигрыш'} · ${Math.ceil(line.end - t)} с`, x + size * 2.45, y + line.h / 2 + 2);
     }
     g.globalAlpha = 1;
   }

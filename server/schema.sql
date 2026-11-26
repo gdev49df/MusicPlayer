@@ -1,0 +1,46 @@
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  login TEXT NOT NULL,
+  login_key TEXT NOT NULL UNIQUE,
+  salt TEXT NOT NULL,
+  hash TEXT NOT NULL,
+  pro_until INTEGER NOT NULL DEFAULT 0,
+  blocked INTEGER NOT NULL DEFAULT 0,
+  created INTEGER NOT NULL,
+  seen INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  device TEXT NOT NULL DEFAULT '',
+  expires INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS sessions_user ON sessions (user_id);
+CREATE TABLE IF NOT EXISTS exports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  device TEXT NOT NULL,
+  day INTEGER NOT NULL,
+  free INTEGER NOT NULL,
+  seconds INTEGER NOT NULL,
+  at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS exports_user ON exports (day, user_id);
+CREATE INDEX IF NOT EXISTS exports_device ON exports (day, device);
+CREATE TABLE IF NOT EXISTS codes (
+  code TEXT PRIMARY KEY,
+  days INTEGER NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  created INTEGER NOT NULL,
+  used_by INTEGER,
+  used_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS attempts (
+  key TEXT NOT NULL,
+  at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS attempts_key ON attempts (key, at);
+CREATE TABLE IF NOT EXISTS config (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);

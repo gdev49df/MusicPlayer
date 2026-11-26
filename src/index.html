@@ -12,6 +12,7 @@
   <span class="logo" aria-hidden="true"><i></i><i></i><i></i></span>
   <h1>Припев</h1>
   <p>видео с текстом песни для TikTok</p>
+  <button id="accountButton" hidden>Войти</button>
   <div id="updates" hidden>
     <span id="updStatus" role="status"></span>
     <span id="appVersion"></span>
@@ -37,6 +38,7 @@
       <button data-len="0">Весь трек</button>
       <button id="fromHere">Начать отсюда</button>
       <button id="playRange">▶ Фрагмент</button>
+      <label class="toggle" title="Конец ролика плавно переходит в начало"><input type="checkbox" id="loop"> ⟲ Бесшовный повтор</label>
     </div>
   </section>
 
@@ -68,9 +70,9 @@
         <p class="status" id="coverStatus" role="status">Найдётся после загрузки трека.</p>
         <div class="covers" id="covers"></div>
         <label class="link">Своя картинка<input type="file" id="coverFile" accept="image/*" hidden></label>
-        <div class="deck-only">
-          <h2>Верхняя карточка</h2>
-          <p class="hint">Показывает обложку. Можно поставить своё фото или зацикленное видео.</p>
+        <div data-show="deck lock">
+          <h2 id="cardTitle">Верхняя карточка</h2>
+          <p class="hint" id="cardHint">Показывает обложку. Можно поставить своё фото или зацикленное видео.</p>
           <p class="status" id="cardStatus" role="status"></p>
           <div class="row">
             <label class="button">Своё фото или видео<input type="file" id="cardFile" accept="image/*,video/mp4,video/webm,video/quicktime" hidden></label>
@@ -142,7 +144,11 @@
         </div>
 
         <div id="editorBox">
-          <h2>Строки</h2>
+          <div class="heading">
+            <h2>Строки</h2>
+            <button id="undo" title="Отменить (Ctrl+Z)" aria-label="Отменить" disabled>↶</button>
+            <button id="redo" title="Вернуть (Ctrl+Y)" aria-label="Вернуть" disabled>↷</button>
+          </div>
           <div class="row">
             <button id="addLine">+ Строка здесь</button>
             <button id="addGap">+ Проигрыш здесь</button>
@@ -160,9 +166,29 @@
           <button role="radio" data-layout="lyrics" aria-checked="false">Плеер</button>
           <button role="radio" data-layout="cover" aria-checked="false">Большая обложка</button>
           <button role="radio" data-layout="text" aria-checked="false">Крупный текст</button>
+          <button role="radio" data-layout="chat" data-pro="style:chat" aria-checked="false">Переписка</button>
+          <button role="radio" data-layout="lock" data-pro="style:lock" aria-checked="false">Экран блокировки</button>
+          <button role="radio" data-layout="vinyl" data-pro="style:vinyl" aria-checked="false">Пластинка</button>
+          <button role="radio" data-layout="cassette" data-pro="style:cassette" aria-checked="false">Кассета</button>
         </div>
 
-        <div class="deck-only">
+        <div data-show="chat">
+          <label>Имя собеседника<input id="chatName" maxlength="30" placeholder="пусто = исполнитель" autocomplete="off"></label>
+          <div class="checks"><label><input type="checkbox" id="chatSound" checked> Звук сообщений</label></div>
+          <p class="hint">Каждая строка песни — сообщение. Кто пишет, можно выбрать у строки на вкладке «Текст».</p>
+        </div>
+
+        <h2>Текст в кадре</h2>
+        <label>Шрифт<select id="font"></select></label>
+        <label data-show="deck lyrics cover text vinyl cassette">Появление текста<select id="textAnim">
+          <option value="karaoke">Прокрутка строк</option>
+          <option value="pop">Слова выпрыгивают по одному</option>
+          <option value="type" data-pro="text:type">Печатная машинка</option>
+          <option value="big" data-pro="text:big">Одно огромное слово</option>
+        </select></label>
+        <label class="slider">Размер текста <output for="scale"></output><input type="range" id="scale" min="0.7" max="1.35" step="0.05" value="1" data-unit="×"></label>
+
+        <div data-show="deck">
           <h2>Темы</h2>
           <div class="segment" id="themes"></div>
           <div class="segment" id="presets"></div>
@@ -170,36 +196,42 @@
             <input id="presetName" maxlength="24" placeholder="Название своей темы" autocomplete="off" aria-label="Название своей темы">
             <button id="presetSave">Сохранить</button>
           </div>
-
-          <h2>Цвет и фон</h2>
-          <div class="two">
-            <label>Цвет подсветки<input type="color" id="accent" value="#ff5468"></label>
-            <label class="check"><input type="checkbox" id="autoAccent" checked> брать из обложки</label>
-          </div>
-          <label>Фон<select id="bgMode"><option value="cover">Размытая обложка</option><option value="glow">Цветное свечение</option></select></label>
-
-          <h2>Эффект и движение</h2>
-          <label>Эффект на верхней карточке<select id="effect">
-            <option value="rain">Дождь</option><option value="snow">Снег</option><option value="sparks">Искры</option>
-            <option value="vhs">VHS-кассета</option><option value="glitch">Глитч</option><option value="none">Без эффекта</option>
-          </select></label>
-          <label class="slider">Сила эффекта <output for="strength"></output><input type="range" id="strength" min="0" max="100" value="70" data-unit="%"></label>
-          <label class="slider">Реакция на бит <output for="pulse"></output><input type="range" id="pulse" min="0" max="100" value="60" data-unit="%"></label>
         </div>
 
-        <label class="slider">Размер текста <output for="scale"></output><input type="range" id="scale" min="0.7" max="1.35" step="0.05" value="1" data-unit="×"></label>
+        <h2>Цвет и фон</h2>
+        <div class="two">
+          <label>Цвет подсветки<input type="color" id="accent" value="#ff5468"></label>
+          <label class="check"><input type="checkbox" id="autoAccent" checked> брать из обложки</label>
+        </div>
+        <label data-show="deck">Фон<select id="bgMode"><option value="cover">Размытая обложка</option><option value="glow">Цветное свечение</option></select></label>
+
+        <h2>Эффект и движение</h2>
+        <div data-show="deck lock">
+          <label>Эффект на картинке<select id="effect">
+            <option value="rain">Дождь</option><option value="snow">Снег</option><option value="sparks" data-pro="fx:sparks">Искры</option>
+            <option value="vhs" data-pro="fx:vhs">VHS-кассета</option><option value="glitch" data-pro="fx:glitch">Глитч</option><option value="none">Без эффекта</option>
+          </select></label>
+          <label class="slider">Сила эффекта <output for="strength"></output><input type="range" id="strength" min="0" max="100" value="70" data-unit="%"></label>
+        </div>
+        <label class="slider" data-show="deck lock chat">Реакция на бит <output for="pulse"></output><input type="range" id="pulse" min="0" max="100" value="60" data-unit="%"></label>
+
         <div class="checks">
-          <label class="deck-only"><input type="checkbox" id="mono" checked> Чёрно-белая картинка</label>
-          <label class="deck-only"><input type="checkbox" id="intro" checked> Блоки плавно выезжают в начале</label>
+          <label data-show="deck lock"><input type="checkbox" id="mono" checked> Чёрно-белая картинка</label>
+          <label data-show="deck"><input type="checkbox" id="intro" checked> Блоки плавно выезжают в начале</label>
           <label><input type="checkbox" id="karaoke" checked> Заливка по словам</label>
-          <label><input type="checkbox" id="blur" checked> Размытие соседних строк</label>
+          <label data-show="deck lyrics cover text vinyl cassette"><input type="checkbox" id="blur" checked> Размытие соседних строк</label>
           <label><input type="checkbox" id="motion" checked> Живой фон</label>
-          <label id="progressRow"><input type="checkbox" id="progress" checked> Полоса времени</label>
+          <label data-show="lyrics cover text vinyl"><input type="checkbox" id="progress" checked> Полоса времени</label>
           <label id="guidesRow"><input type="checkbox" id="guides"> Показать зоны интерфейса TikTok</label>
         </div>
         <label>Ваш ник на видео<input id="nick" maxlength="30" placeholder="@nickname" autocomplete="off"></label>
 
-        <details class="deck-only">
+        <div class="two" data-show="lock chat">
+          <label>Часы<input data-mirror="clock" maxlength="8" autocomplete="off"></label>
+          <label data-show="lock">Дата<input data-mirror="date" maxlength="20" autocomplete="off"></label>
+        </div>
+
+        <details data-show="deck">
           <summary>Свои надписи и виджеты</summary>
           <div class="two">
             <label>Часы<input id="clock" maxlength="8" value="9:41" autocomplete="off"></label>
@@ -221,21 +253,21 @@
           </div>
         </details>
 
-        <details class="deck-only">
+        <details data-show="deck lock">
           <summary>Какие блоки показывать</summary>
           <div class="checks grid">
-            <label><input type="checkbox" id="shStatus" checked> Часы и значки</label>
-            <label><input type="checkbox" id="shIsland" checked> Плашка сверху</label>
-            <label><input type="checkbox" id="shMedia" checked> Верхняя карточка</label>
+            <label data-show="deck"><input type="checkbox" id="shStatus" checked> Часы и значки</label>
+            <label data-show="deck"><input type="checkbox" id="shIsland" checked> Плашка сверху</label>
+            <label data-show="deck"><input type="checkbox" id="shMedia" checked> Верхняя карточка</label>
             <label><input type="checkbox" id="shPlayer" checked> Плеер</label>
-            <label><input type="checkbox" id="shEq" checked> Левый виджет</label>
-            <label><input type="checkbox" id="shRing" checked> Круг</label>
-            <label><input type="checkbox" id="shHeader" checked> Заголовок текста</label>
+            <label data-show="deck"><input type="checkbox" id="shEq" checked> Левый виджет</label>
+            <label data-show="deck"><input type="checkbox" id="shRing" checked> Круг</label>
+            <label data-show="deck"><input type="checkbox" id="shHeader" checked> Заголовок текста</label>
           </div>
-          <p class="hint">В формате 9:16 двух нижних виджетов нет.</p>
+          <p class="hint" data-show="deck">В формате 9:16 двух нижних виджетов нет.</p>
         </details>
 
-        <details class="deck-only">
+        <details data-show="deck lock">
           <summary>Всплывающие сообщения</summary>
           <label>По одному в строке: время, имя, текст
             <textarea id="notices" rows="3" spellcheck="false" placeholder="0:08 Она: Забери меня, пожалуйста"></textarea></label>
@@ -250,8 +282,8 @@
         <label class="slider">Громкость <output for="volume"></output><input type="range" id="volume" min="0" max="150" value="100" data-unit="%"></label>
         <label class="slider">Плавное начало <output for="fadeIn"></output><input type="range" id="fadeIn" min="0" max="5" step="0.1" value="0.2" data-unit=" с"></label>
         <label class="slider">Плавный конец <output for="fadeOut"></output><input type="range" id="fadeOut" min="0" max="5" step="0.1" value="1" data-unit=" с"></label>
-        <p class="hint">Начало и конец слышно по кнопке «▶ Фрагмент» под шкалой трека.</p>
-        <label class="slider deck-only">Полоска громкости в кадре <output for="barVolume"></output><input type="range" id="barVolume" min="0" max="100" value="75" data-unit="%"></label>
+        <p class="hint" id="fadeHint">Начало и конец слышно по кнопке «▶ Фрагмент» под шкалой трека.</p>
+        <label class="slider" data-show="deck">Полоска громкости в кадре <output for="barVolume"></output><input type="range" id="barVolume" min="0" max="100" value="75" data-unit="%"></label>
         <h2>Эффекты</h2>
         <div class="segment" id="soundPresets">
           <button data-sound="1,0,0">Оригинал</button>
@@ -281,6 +313,7 @@
         <select id="fps" aria-label="Плавность"><option value="30">30 к/с</option><option value="60">60 к/с</option></select>
         <button class="primary" id="export" disabled>Создать видео</button>
       </div>
+      <p class="plan" id="planLine" hidden></p>
       <p class="status" id="exportStatus" role="status"></p>
       <button id="showResult" hidden>Показать готовое видео</button>
     </div>
@@ -307,6 +340,62 @@
     <button id="doneClose">Закрыть</button>
   </div>
   <p class="hint">TikTok может заглушить звук с чужой музыкой. Если так случится, выберите этот трек из библиотеки звуков самого TikTok.</p>
+</dialog>
+
+<dialog id="account" aria-labelledby="accountTitle">
+  <button class="close" id="accountClose" aria-label="Закрыть">✕</button>
+
+  <form id="signForm" novalidate>
+    <h2 id="accountTitle">Вход в аккаунт</h2>
+    <p class="hint" id="signNote"></p>
+    <label>Логин<input id="login" maxlength="24" autocomplete="username" spellcheck="false" placeholder="латиницей, от 3 знаков"></label>
+    <label>Пароль<input type="password" id="password" maxlength="100" autocomplete="current-password" placeholder="от 6 знаков"></label>
+    <label id="repeatRow" hidden>Пароль ещё раз<input type="password" id="password2" maxlength="100" autocomplete="new-password"></label>
+    <p class="status" id="signStatus" role="status"></p>
+    <button class="wide primary" id="signSubmit">Войти</button>
+    <button type="button" class="linkish" id="signSwitch">Нет аккаунта? Создать</button>
+    <p class="hint" id="forgot">Забыли пароль — напишите нам, и его заменят.</p>
+  </form>
+
+  <div id="profile" hidden>
+    <h2 id="profileName"></h2>
+    <p class="badge" id="profilePlan"></p>
+    <p class="status" id="profileUsage"></p>
+    <div class="perks" id="perks">
+      <b>Pro открывает</b>
+      <ul>
+        <li>видео без ограничения по числу и длине</li>
+        <li>ролики без водяного знака</li>
+        <li>все стили, эффекты и анимации текста</li>
+      </ul>
+      <p class="price" id="price"></p>
+      <p class="hint" id="contact"></p>
+      <a class="button wide" id="contactLink" target="_blank" rel="noopener" hidden>Получить код</a>
+    </div>
+    <form id="codeForm" class="inline">
+      <input id="code" maxlength="24" placeholder="PRO-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false" aria-label="Код активации">
+      <button class="primary" id="codeSubmit">Активировать</button>
+    </form>
+    <p class="status" id="codeStatus" role="status"></p>
+    <details>
+      <summary>Сменить пароль</summary>
+      <form id="passForm">
+        <label>Старый пароль<input type="password" id="oldPass" autocomplete="current-password"></label>
+        <label>Новый пароль<input type="password" id="newPass" autocomplete="new-password" placeholder="от 6 знаков"></label>
+        <p class="status" id="passStatus" role="status"></p>
+        <button class="wide">Сменить</button>
+      </form>
+    </details>
+    <button class="wide" id="logout">Выйти из аккаунта</button>
+  </div>
+</dialog>
+
+<dialog id="gate" aria-labelledby="gateTitle">
+  <h2 id="gateTitle">Это доступно в Pro</h2>
+  <ul id="gateList"></ul>
+  <button class="wide primary" id="gatePro">Подключить Pro</button>
+  <button class="wide" id="gateFix">Сделать по бесплатному тарифу</button>
+  <button class="linkish" id="gateClose">Отмена</button>
 </dialog>
 
 <audio id="audio" preload="auto"></audio>

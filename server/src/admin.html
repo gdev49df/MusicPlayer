@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Припев — управление</title>
+<style>
+  :root { color-scheme: dark; --bg: #0d0e12; --card: #17181f; --line: #2a2c37; --text: #f2f3f7; --dim: #9a9db0; --accent: #ff5468; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { font-size: 22px; margin: 0 0 16px; }
+  h2 { font-size: 16px; margin: 0 0 12px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+  input, select, textarea, button { font: inherit; color: inherit; background: #101116; border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px; }
+  input, textarea { width: 100%; }
+  input[type=checkbox] { width: auto; }
+  button { cursor: pointer; background: #23242e; }
+  button:hover { border-color: #4a4d5e; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.danger { color: #ff8b97; }
+  label { display: block; color: var(--dim); font-size: 13px; }
+  label > input, label > textarea { margin-top: 4px; color: var(--text); font-size: 15px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+  .grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+  .stats { display: grid; gap: 10px; grid-template-columns: repeat(4, 1fr); margin-bottom: 14px; }
+  .stats div { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
+  .stats b { display: block; font-size: 24px; }
+  .stats span, .dim { color: var(--dim); font-size: 13px; }
+  ul { list-style: none; margin: 12px 0 0; padding: 0; }
+  li { border-top: 1px solid var(--line); padding: 10px 0; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+  li .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  li button { padding: 6px 9px; font-size: 13px; }
+  code { font: 600 15px ui-monospace, Consolas, monospace; letter-spacing: .5px; }
+  .tag { font-size: 12px; border-radius: 99px; padding: 2px 8px; background: #2a2c37; color: var(--dim); }
+  .tag.pro { background: rgba(255, 84, 104, .18); color: #ff8b97; }
+  .features { display: grid; gap: 6px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); margin: 6px 0 12px; }
+  .features label { color: var(--text); font-size: 14px; display: flex; gap: 8px; align-items: center; }
+  #made { margin-top: 10px; }
+  #toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: #fff; color: #111; padding: 10px 16px; border-radius: 99px; font-weight: 600; max-width: 92vw; }
+  #login { max-width: 360px; margin: 12vh auto 0; }
+  footer { text-align: center; color: var(--dim); font-size: 12px; margin-top: 22px; }
+  [hidden] { display: none !important; }
+  @media (max-width: 560px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <section id="login">
+    <h1>Припев — управление</h1>
+    <form id="loginForm">
+      <label>Пароль администратора<input type="password" id="password" autocomplete="current-password" required></label>
+      <p><button class="primary">Войти</button></p>
+      <p class="dim" id="loginStatus" role="status"></p>
+    </form>
+  </section>
+
+  <main id="panel" hidden>
+    <div class="row" style="justify-content: space-between"><h1>Припев — управление</h1><button id="logout">Выйти</button></div>
+    <div class="stats">
+      <div><b id="sUsers">0</b><span>аккаунтов</span></div>
+      <div><b id="sPro">0</b><span>с Pro</span></div>
+      <div><b id="sToday">0</b><span>видео сегодня</span></div>
+      <div><b id="sCodes">0</b><span>свободных кодов</span></div>
+    </div>
+
+    <section>
+      <h2>Коды активации</h2>
+      <form id="codeForm" class="row">
+        <label>Срок, дней<input type="number" id="days" min="1" max="36500" value="30" required></label>
+        <label>Сколько кодов<input type="number" id="count" min="1" max="50" value="1" required></label>
+        <label style="flex: 1; min-width: 160px">Пометка<input id="memo" maxlength="80" placeholder="кому и за что"></label>
+        <button class="primary">Создать</button>
+      </form>
+      <div id="made"></div>
+      <ul id="codes"></ul>
+    </section>
+
+    <section>
+      <h2>Пользователи</h2>
+      <input id="search" placeholder="Поиск по логину" autocomplete="off">
+      <ul id="users"></ul>
+    </section>
+
+    <section>
+      <h2>Тарифы и надписи</h2>
+      <form id="configForm">
+        <div class="grid">
+          <label>Бесплатных видео в день<input type="number" id="freeDaily" min="0" max="1000"></label>
+          <label>Бесплатная длина, секунд<input type="number" id="freeSeconds" min="5" max="600"></label>
+          <label>Водяной знак (пусто — без него)<input id="watermark" maxlength="30"></label>
+          <label>Цена Pro<input id="price" maxlength="80" placeholder="например, 990 ₸ в месяц"></label>
+          <label>Ссылка, где купить код<input id="contactUrl" maxlength="200" placeholder="https://t.me/..."></label>
+        </div>
+        <p><label>Как купить (текст в программе)<textarea id="contact" rows="2" maxlength="300" placeholder="Напишите мне в Telegram, пришлю код после перевода"></textarea></label></p>
+        <h2>Только в Pro</h2>
+        <div class="features" id="features"></div>
+        <button class="primary">Сохранить</button>
+      </form>
+    </section>
+    <footer>Разработано GwebStudio</footer>
+  </main>
+</div>
+<div id="toast" role="status" hidden></div>
+
+<script>
+const NAMES = {
+  'style:chat': 'Стиль «Переписка»', 'style:lock': 'Стиль «Экран блокировки»', 'style:vinyl': 'Стиль «Пластинка»', 'style:cassette': 'Стиль «Кассета»',
+  'fx:sparks': 'Эффект «Искры»', 'fx:vhs': 'Эффект «VHS»', 'fx:glitch': 'Эффект «Глитч»',
+  'text:type': 'Текст «Печатная машинка»', 'text:big': 'Текст «Одно огромное слово»',
+};
+const $ = (id) => document.getElementById(id);
+let token = '';
+try { token = sessionStorage.getItem('pripev.admin') || ''; } catch {}
+
+const el = (tag, text, cls) => {
+  const node = document.createElement(tag);
+  if (text !== undefined) node.textContent = text;
+  if (cls) node.className = cls;
+  return node;
+};
+const date = (ms) => (ms ? new Date(ms).toLocaleDateString('ru-RU') : '—');
+
+let toastTimer;
+function toast(text) {
+  $('toast').textContent = text;
+  $('toast').hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { $('toast').hidden = true; }, 2600);
+}
+
+async function call(path, data) {
+  const response = await fetch(`/admin/api/${path}`, {
+    method: data ? 'POST' : 'GET',
+    headers: { authorization: `Bearer ${token}`, ...(data ? { 'content-type': 'application/json' } : {}) },
+    body: data && JSON.stringify(data),
+  });
+  const out = await response.json().catch(() => ({ message: 'Сервер не отвечает' }));
+  if (!out.ok) {
+    if (response.status === 401 && path !== 'login') show(false);
+    throw new Error(out.message);
+  }
+  return out;
+}
+
+const run = (fn) => async (...args) => { try { await fn(...args); } catch (error) { toast(error.message); } };
+
+// тот же ключ из пароля, что считает программа
+async function passwordKey(login, password) {
+  const enc = new TextEncoder();
+  const base = await crypto.subtle.importKey('raw', enc.encode(password.normalize('NFKC')), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', iterations: 310000, salt: enc.encode(`pripev:v1:${login.toLowerCase()}`) }, base, 256);
+  return [...new Uint8Array(bits)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function show(on) {
+  $('login').hidden = on;
+  $('panel').hidden = !on;
+  if (!on) { token = ''; try { sessionStorage.removeItem('pripev.admin'); } catch {} }
+}
+
+async function overview(fillForm) {
+  const { stats, config, features } = await call('overview');
+  $('sUsers').textContent = stats.users;
+  $('sPro').textContent = stats.pro;
+  $('sToday').textContent = stats.today;
+  $('sCodes').textContent = stats.codes;
+  if (!fillForm) return;
+  for (const key of ['freeDaily', 'freeSeconds', 'watermark', 'price', 'contact', 'contactUrl']) $(key).value = config[key];
+  $('features').replaceChildren(...features.map((key) => {
+    const label = el('label');
+    const box = el('input');
+    box.type = 'checkbox';
+    box.value = key;
+    box.checked = config.pro.includes(key);
+    label.append(box, NAMES[key] || key);
+    return label;
+  }));
+}
+
+function button(text, onClick, cls) {
+  const b = el('button', text, cls);
+  b.type = 'button';
+  b.addEventListener('click', run(onClick));
+  return b;
+}
+
+// двойное нажатие вместо окна подтверждения
+function confirmButton(text, onClick) {
+  let armed = false;
+  const b = button(text, async () => {
+    if (!armed) {
+      armed = true;
+      b.textContent = 'Точно?';
+      setTimeout(() => { armed = false; b.textContent = text; }, 3000);
+      return;
+    }
+    await onClick();
+  }, 'danger');
+  return b;
+}
+
+async function copy(text) {
+  await navigator.clipboard.writeText(text);
+  toast('Скопировано');
+}
+
+async function loadCodes() {
+  const { codes } = await call('codes');
+  $('codes').replaceChildren(...codes.map((c) => {
+    const li = el('li');
+    const info = el('div');
+    info.append(el('code', c.code), el('div', `${c.days} дн.${c.note ? ` · ${c.note}` : ''} · ${c.used ? `активировал ${c.usedBy || 'удалённый аккаунт'} ${date(c.usedAt)}` : 'свободен'}`, 'dim'));
+    const actions = el('div', undefined, 'actions');
+    if (!c.used) actions.append(button('Копировать', () => copy(c.code)), confirmButton('Удалить', async () => { await call('codes/delete', { code: c.code }); await Promise.all([loadCodes(), overview()]); }));
+    li.append(info, actions);
+    return li;
+  }));
+  if (!codes.length) $('codes').append(el('li', 'Кодов пока нет', 'dim'));
+}
+
+let searchTicket = 0;
+async function loadUsers() {
+  const ticket = ++searchTicket;
+  const { users } = await call(`users?q=${encodeURIComponent($('search').value.trim())}`);
+  if (ticket !== searchTicket) return;
+  $('users').replaceChildren(...users.map((u) => {
+    const li = el('li');
+    const info = el('div');
+    const name = el('div');
+    const pro = u.proUntil > Date.now();
+    name.append(el('b', u.login), ' ', el('span', u.blocked ? 'заблокирован' : pro ? `Pro до ${date(u.proUntil)}` : 'бесплатный', `tag${pro && !u.blocked ? ' pro' : ''}`));
+    info.append(name, el('div', `с ${date(u.created)} · видео: ${u.videos}`, 'dim'));
+    const act = (action, extra) => async () => { await call('user', { id: u.id, action, ...extra }); toast('Готово'); await Promise.all([loadUsers(), overview()]); };
+    const actions = el('div', undefined, 'actions');
+    actions.append(button('+30 дней Pro', act('addDays', { days: 30 })), button('+1 год', act('addDays', { days: 365 })));
+    if (pro) actions.append(confirmButton('Убрать Pro', act('removePro')));
+    const pass = button('Новый пароль', async () => {
+      const box = el('input');
+      box.placeholder = 'новый пароль, от 6 символов';
+      box.autocomplete = 'off';
+      const save = button('Задать', async () => {
+        if (box.value.length < 6) throw new Error('Пароль — от 6 символов');
+        await act('password', { key: await passwordKey(u.login, box.value) })();
+      }, 'primary');
+      const row = el('div', undefined, 'row');
+      row.style.width = '100%';
+      box.style.flex = '1';
+      row.append(box, save);
+      li.append(row);
+      pass.disabled = true;
+      box.focus();
+    });
+    actions.append(pass, u.blocked ? button('Разблокировать', act('unblock')) : confirmButton('Заблокировать', act('block')), confirmButton('Удалить', act('delete')));
+    li.append(info, actions);
+    return li;
+  }));
+  if (!users.length) $('users').append(el('li', 'Никого не найдено', 'dim'));
+}
+
+async function open() {
+  await overview(true);
+  show(true);
+  await Promise.all([loadCodes(), loadUsers()]);
+}
+
+$('loginForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  $('loginStatus').textContent = 'Проверяю…';
+  try {
+    token = (await call('login', { password: $('password').value })).token;
+    try { sessionStorage.setItem('pripev.admin', token); } catch {}
+    $('password').value = '';
+    $('loginStatus').textContent = '';
+    await open();
+  } catch (error) { $('loginStatus').textContent = error.message; }
+});
+
+$('logout').addEventListener('click', () => show(false));
+
+$('codeForm').addEventListener('submit', run(async (event) => {
+  event.preventDefault();
+  const { made } = await call('codes', { days: $('days').value, count: $('count').value, note: $('memo').value });
+  const box = el('textarea');
+  box.readOnly = true;
+  box.rows = Math.min(8, made.length);
+  box.value = made.join('\n');
+  $('made').replaceChildren(el('p', 'Новые коды:', 'dim'), box, button('Копировать все', () => copy(box.value), 'primary'));
+  await Promise.all([loadCodes(), overview()]);
+}));
+
+let typing;
+$('search').addEventListener('input', () => { clearTimeout(typing); typing = setTimeout(run(loadUsers), 250); });
+
+$('configForm').addEventListener('submit', run(async (event) => {
+  event.preventDefault();
+  const data = Object.fromEntries(['freeDaily', 'freeSeconds', 'watermark', 'price', 'contact', 'contactUrl'].map((k) => [k, $(k).value]));
+  data.pro = [...$('features').querySelectorAll('input:checked')].map((box) => box.value);
+  await call('config', data);
+  toast('Сохранено. Программа подхватит при следующей проверке.');
+}));
+
+if (token) open().catch(() => show(false));
+</script>
+</body>
+</html>

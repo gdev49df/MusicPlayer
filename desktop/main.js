@@ -36,7 +36,11 @@ function create() {
     },
   });
   win.once('ready-to-show', () => win.show());
-  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  // окна не открываются; защищённые ссылки (где купить код) уходят в браузер
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https://')) shell.openExternal(url);
+    return { action: 'deny' };
+  });
   // разрешена только перезагрузка самой программы («Новый проект»)
   win.webContents.on('will-navigate', (e) => {
     if (e.url !== win.webContents.getURL()) e.preventDefault();

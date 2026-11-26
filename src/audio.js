@@ -180,7 +180,26 @@ const limit = (v) => {
   return a <= 0.9 ? v : Math.sign(v) * (0.9 + 0.099 * Math.tanh((a - 0.9) / 0.099));
 };
 
-export function sliceAudio(buffer, from, to, { volume = 1, fadeIn = 0, fadeOut = 0 } = {}) {
+// звук сообщения в «Переписке»: чужое — два звоночка, своё — короткий «бульк»
+export function messageTone(side, rate = RATE) {
+  const length = Math.round(rate * (side === 'me' ? 0.14 : 0.36));
+  const out = new Float32Array(length);
+  let phase = 0;
+  for (let i = 0; i < length; i++) {
+    const t = i / rate;
+    if (side === 'me') {
+      phase += (2 * Math.PI * (380 + 520 * Math.min(1, t / 0.09))) / rate;
+      out[i] = Math.sin(phase) * Math.min(1, t / 0.006) * Math.exp(-t * 28) * 0.8;
+    } else {
+      const note = (at, f) => (t < at ? 0 : Math.sin(2 * Math.PI * f * (t - at)) * Math.min(1, (t - at) / 0.004) * Math.exp(-(t - at) * 15));
+      out[i] = (note(0, 987.8) + note(0.085, 1318.5) * 0.9) * 0.55 * Math.min(1, (length - i) / (rate * 0.02));
+    }
+  }
+  return out;
+}
+
+// loop — конец фрагмента перетекает в то, что звучало перед его началом
+export function sliceAudio(buffer, from, to, { volume = 1, fadeIn = 0, fadeOut = 0, loop = 0, events = [], eventVolume = 0.32 } = {}) {
   const rate = buffer.sampleRate;
   const a = Math.floor(from * rate);
   const n = Math.max(1, Math.min(buffer.length, Math.ceil(to * rate)) - a);
@@ -189,13 +208,26 @@ export function sliceAudio(buffer, from, to, { volume = 1, fadeIn = 0, fadeOut =
   // короткие 20 мс по краям убирают щелчки даже без затухания
   const inN = Math.min(n / 2, rate * Math.max(0.02, fadeIn));
   const outN = Math.min(n / 2, rate * Math.max(0.02, fadeOut));
+  const cross = Math.min(n, Math.round(loop * rate));
+  const tones = events.filter((e) => e.at >= from && e.at < to).map((e) => ({ at: Math.round((e.at - from) * rate), data: messageTone(e.side, rate) }));
   for (let c = 0; c < channels; c++) {
     const d = out.getChannelData(c);
-    d.set(buffer.getChannelData(c).subarray(a, a + n));
-    for (let i = 0; i < n; i++) {
-      const k = Math.min(1, i / inN, (n - 1 - i) / outN);
-      d[i] = volume > 1 ? limit(d[i] * volume * k) : d[i] * volume * k;
+    const source = buffer.getChannelData(c);
+    d.set(source.subarray(a, a + n));
+    for (let i = n - cross; i < n; i++) {
+      const k = ((i - (n - cross) + 1) / cross) * (Math.PI / 2);
+      const before = a - (n - i);
+      d[i] = d[i] * Math.cos(k) + (before >= 0 ? source[before] * Math.sin(k) : 0);
     }
+    for (let i = 0; i < n; i++) {
+      // при повторе стык непрерывный, затухания по краям не нужны
+      const k = cross ? 1 : Math.min(1, i / inN, (n - 1 - i) / outN);
+      d[i] = d[i] * volume * k;
+    }
+    for (const tone of tones) {
+      for (let i = 0; i < tone.data.length && tone.at + i < n; i++) d[tone.at + i] += tone.data[i] * eventVolume;
+    }
+    if (volume > 1 || cross || tones.length) for (let i = 0; i < n; i++) d[i] = limit(d[i]);
   }
   return out;
 }
@@ -236,6 +268,19 @@ export function createMonitor(element) {
     set(value) {
       if (gain) gain.gain.value = value;
       else element.volume = Math.min(1, value);
+    },
+    // звук сообщения в предпросмотре
+    ping(side, volume = 0.32) {
+      if (!ctx) return;
+      const data = messageTone(side, ctx.sampleRate);
+      const buffer = ctx.createBuffer(1, data.length, ctx.sampleRate);
+      buffer.copyToChannel(data, 0);
+      const src = ctx.createBufferSource();
+      const level = ctx.createGain();
+      level.gain.value = volume;
+      src.buffer = buffer;
+      src.connect(level).connect(ctx.destination);
+      src.start();
     },
   };
 }
