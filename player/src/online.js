@@ -48,7 +48,7 @@ export async function findLyrics(track) {
     if (synced && Math.abs(factor - 1) > 0.03) text = toLrc(parseLrc(text).map((l) => ({ ...l, time: l.time * factor })));
     return {
       text, synced,
-      label: `${item.artist} — ${item.title}${item.duration ? ` · ${Math.floor(item.duration / 60)}:${String(Math.round(item.duration) % 60).padStart(2, '0')}` : ''}${synced ? '' : ' · без таймингов'}`,
+      label: `${item.artist} — ${item.title}${item.duration ? `, ${Math.floor(item.duration / 60)}:${String(Math.round(item.duration) % 60).padStart(2, '0')}` : ''}${synced ? '' : ', без таймингов'}`,
       // без вопроса ставим только уверенное совпадение
       sure: item.match && (synced ? slowed || item.diff <= 8 : item.diff <= 15),
     };

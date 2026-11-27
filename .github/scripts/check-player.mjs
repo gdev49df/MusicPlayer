@@ -75,7 +75,16 @@ console.log('Время идёт:', at > 9);
 
 await js("document.querySelector('#lyricsBtn').click()");
 await until("document.querySelectorAll('#lyrics .line').length === 2", 15, 'текст песни из файла');
-await js("document.querySelector('#stageClose').click(); document.querySelector('#next').click()");
+await js("document.querySelector('#stageClose').click()");
+
+// волна рисуется из самого файла: у ровного тона столбики во всю высоту, у заготовки — низкие
+await until(`(() => { const c = document.querySelector('#wave'); return c.getContext('2d').getImageData(0, 1, c.width, 1).data.some((v, i) => i % 4 === 3 && v > 0); })()`, 20, 'волну песни');
+await until(`document.fonts.load('20px "Piazzolla Variable"', 'Әй').then((f) => f.length === 2)`, 10, 'шрифт названий');
+await js("document.querySelector('#tabs [data-route=playlists]').click()");
+await until("document.querySelectorAll('#view .tape').length === 1", 10, 'страницу кассет');
+console.log('Новый вид: волна, шрифт и кассеты на месте');
+
+await js("document.querySelector('#next').click()");
 await until("document.querySelector('#nowTitle').textContent === 'Вторая'", 10, 'следующий трек');
 console.log('Играет:', await js("document.querySelector('#nowTitle').textContent"));
 

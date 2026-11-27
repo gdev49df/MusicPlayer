@@ -30,7 +30,8 @@ const ICONS = {
   heartFull: fill('M12 21s-9-5.2-9-11.6C3 6 5.500 4 8.200 4c1.600 0 3 .800 3.800 2 .800-1.200 2.200-2 3.800-2C18.500 4 21 6 21 9.400 21 15.800 12 21 12 21z'),
   list: line('M4 7h12M4 12h12M4 17h8') + fill('M18 14l4 3-4 3z'),
   queue: line('M4 6h16M4 11h16M4 16h9') + fill('M16 14l5 3.500-5 3.500z'),
-  lyrics: line('M9 4h6v8a3 3 0 01-6 0zM5 11a7 7 0 0014 0M12 18v3'),
+  lyrics: line('M4 6h16M4 11h10M4 16h13'),
+  tape: line('M4 6h16a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V7a1 1 0 011-1zM8.500 9.500a2 2 0 100 4 2 2 0 000-4zM15.500 9.500a2 2 0 100 4 2 2 0 000-4zM8 18l1.500-3h5L16 18'),
   settings: line('M4 7h9M17 7h3M4 17h3M11 17h9') + line('M15 4.500a2.500 2.500 0 100 5 2.500 2.500 0 000-5zM9 14.500a2.500 2.500 0 100 5 2.500 2.500 0 000-5z'),
   folder: line('M3 7a2 2 0 012-2h4l2 3h8a2 2 0 012 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2z'),
   plus: line('M12 5v14M5 12h14'),
@@ -77,7 +78,7 @@ export function plural(n, one, few, many) {
   const t = n % 100;
   return `${n} ${d === 1 && t !== 11 ? one : d >= 2 && d <= 4 && (t < 12 || t > 14) ? few : many}`;
 }
-export const tracksWord = (n) => plural(n, 'трек', 'трека', 'треков');
+export const tracksWord = (n) => plural(n, 'песня', 'песни', 'песен');
 
 export function duration(seconds) {
   const m = Math.round(seconds / 60);

@@ -87,13 +87,13 @@ function create() {
     minWidth: Math.min(900, area.width),
     minHeight: Math.min(600, area.height),
     title: 'Куплет',
-    backgroundColor: '#08090c',
+    backgroundColor: '#191022',
     icon: path.join(__dirname, 'icon.png'),
     show: false,
     autoHideMenuBar: true,
     // своя верхняя полоса, кнопки окна остаются системными
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#08090c', symbolColor: '#f4f2f0', height: 55 },
+    titleBarOverlay: { color: '#191022', symbolColor: '#f6eefc', height: 55 },
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

@@ -9,71 +9,89 @@
 </head>
 <body>
 <header id="top">
-  <div class="brand"><span class="logo" aria-hidden="true"><i></i><i></i><i></i></span><b>Куплет</b></div>
+  <div class="brand"><span class="logo" aria-hidden="true"></span><b>Куплет</b></div>
   <div class="nav">
     <button class="icon" id="back" data-icon="back" title="Назад (Alt+←)" aria-label="Назад"></button>
     <button class="icon" id="forward" data-icon="forward" title="Вперёд (Alt+→)" aria-label="Вперёд"></button>
   </div>
+  <nav id="tabs" aria-label="Разделы">
+    <button data-route="home">Полка</button>
+    <button data-route="tracks">Песни</button>
+    <button data-route="albums">Пластинки</button>
+    <button data-route="artists">Артисты</button>
+    <button data-route="playlists">Кассеты</button>
+  </nav>
   <label class="search">
     <span data-icon="search"></span>
-    <input id="search" type="search" placeholder="Что включить? Название, артист, альбом" autocomplete="off" spellcheck="false" aria-label="Поиск">
+    <input id="search" type="search" placeholder="Поиск песни" autocomplete="off" spellcheck="false" aria-label="Поиск">
   </label>
+  <button class="icon" id="addMusic" data-icon="plus" title="Добавить музыку" aria-label="Добавить музыку"></button>
+  <button class="icon" data-route="settings" data-icon="settings" title="Настройки" aria-label="Настройки"></button>
   <button class="pill" id="updatePill" hidden></button>
 </header>
 
 <div id="shell">
-  <aside id="side">
-    <nav id="menu"></nav>
-    <div class="listhead">
-      <span>Плейлисты</span>
-      <button class="icon" id="newList" data-icon="plus" title="Новый плейлист" aria-label="Новый плейлист"></button>
-    </div>
-    <div id="lists"></div>
-    <div class="sidefoot">
-      <div id="scan" hidden><span></span><progress max="1"></progress></div>
-      <button class="wide" id="addMusic"><span data-icon="folder"></span>Добавить музыку</button>
-      <p>Разработано GwebStudio</p>
-    </div>
-  </aside>
   <main id="view" tabindex="-1"></main>
-</div>
 
-<footer id="bar">
-  <div class="now">
-    <button id="nowCover" class="cover" title="Открыть текст песни" aria-label="Открыть текст песни"></button>
-    <div class="names"><button class="text" id="nowTitle"></button><button class="text sub" id="nowArtist"></button></div>
-    <button class="icon heart" id="nowLike" data-icon="heart" title="В любимое" aria-label="В любимое" hidden></button>
-  </div>
-  <div class="center">
+  <aside id="deck" aria-label="Проигрыватель">
+    <div class="turntable">
+      <button id="nowCover" class="platter" title="Открыть текст песни" aria-label="Открыть текст песни"><span class="disc"><span class="cover" id="nowLabel"></span></span></button>
+      <span class="arm" aria-hidden="true"><i></i></span>
+    </div>
+    <div class="now">
+      <div class="names"><button class="text" id="nowTitle"></button><button class="text sub" id="nowArtist"></button></div>
+      <button class="icon heart" id="nowLike" data-icon="heart" title="В любимое" aria-label="В любимое" hidden></button>
+    </div>
+    <div class="seek">
+      <div class="wave"><canvas id="wave" aria-hidden="true"></canvas><input type="range" id="seek" min="0" max="1000" value="0" aria-label="Перемотка"></div>
+      <div class="times"><span id="time">0:00</span><span id="length">0:00</span></div>
+    </div>
     <div class="controls">
       <button class="icon" id="shuffle" data-icon="shuffle" title="Перемешать (S)" aria-label="Перемешать"></button>
-      <button class="icon" id="prev" data-icon="prev" title="Предыдущий (Ctrl+←)" aria-label="Предыдущий"></button>
+      <button class="icon big" id="prev" data-icon="prev" title="Предыдущий (Ctrl+←)" aria-label="Предыдущий"></button>
       <button class="play" id="play" data-icon="play" title="Играть или пауза (пробел)" aria-label="Играть"></button>
-      <button class="icon" id="next" data-icon="next" title="Следующий (Ctrl+→)" aria-label="Следующий"></button>
+      <button class="icon big" id="next" data-icon="next" title="Следующий (Ctrl+→)" aria-label="Следующий"></button>
       <button class="icon" id="repeat" data-icon="repeat" title="Повтор (R)" aria-label="Повтор"></button>
     </div>
-    <div class="seek"><span id="time">0:00</span><input type="range" id="seek" min="0" max="1000" value="0" aria-label="Перемотка"><span id="length">0:00</span></div>
-  </div>
-  <div class="extra">
-    <button class="icon" id="lyricsBtn" data-icon="lyrics" title="Текст песни (L)" aria-label="Текст песни"></button>
-    <button class="icon" id="queueBtn" data-icon="queue" title="Очередь (Q)" aria-label="Очередь"></button>
-    <button class="icon" id="mute" data-icon="volume" title="Выключить звук (M)" aria-label="Звук"></button>
-    <input type="range" id="volume" min="0" max="100" value="80" aria-label="Громкость">
-  </div>
-</footer>
+    <div class="extra">
+      <div class="loud"><button class="icon" id="mute" data-icon="volume" title="Выключить звук (M)" aria-label="Звук"></button><input type="range" id="volume" min="0" max="100" value="80" aria-label="Громкость"></div>
+      <button id="lyricsBtn" data-icon="lyrics" title="Текст песни (L)">Текст</button>
+      <button class="icon" id="queueBtn" data-icon="queue" title="Очередь (Q)" aria-label="Очередь"></button>
+    </div>
+    <div id="upnext"></div>
+    <p class="made">Разработано GwebStudio</p>
+  </aside>
+</div>
 
 <section id="stage" hidden tabindex="-1" aria-label="Текст песни">
-  <div class="backdrop"></div>
+  <div class="backdrop" aria-hidden="true"><i></i><i></i></div>
   <div class="stagetop">
     <div class="tools" id="stageTools"></div>
     <button class="icon" id="stageClose" data-icon="close" title="Закрыть (Esc)" aria-label="Закрыть"></button>
   </div>
   <div class="stagebody">
-    <div class="stageart"><div class="cover" id="stageCover"></div><h2 id="stageTitle"></h2><p id="stageArtist"></p></div>
+    <div class="stageart">
+      <div class="vinyl" aria-hidden="true"><span class="disc"><span class="cover" id="stageLabel"></span></span><span class="cover jacket" id="stageCover"></span></div>
+      <div class="stagenames">
+        <div><h2 id="stageTitle"></h2><p id="stageArtist"></p></div>
+        <button class="icon heart" id="stageLike" data-icon="heart" title="В любимое" aria-label="В любимое"></button>
+      </div>
+      <div class="seek">
+        <div class="wave"><canvas id="stageWave" aria-hidden="true"></canvas><input type="range" id="stageSeek" min="0" max="1000" value="0" aria-label="Перемотка"></div>
+        <div class="times"><span id="stageTime">0:00</span><span id="stageLength">0:00</span></div>
+      </div>
+      <div class="controls">
+        <button class="icon big" id="stagePrev" data-icon="prev" title="Предыдущий" aria-label="Предыдущий"></button>
+        <button class="play" id="stagePlay" data-icon="play" title="Играть или пауза" aria-label="Играть"></button>
+        <button class="icon big" id="stageNext" data-icon="next" title="Следующий" aria-label="Следующий"></button>
+      </div>
+    </div>
     <div class="lyrics" id="lyrics"></div>
   </div>
 </section>
 
+<div id="scan" role="status" hidden><span></span><progress max="1"></progress></div>
+<div id="tray" hidden></div>
 <div id="dropzone" hidden><div><span data-icon="folder"></span><b>Отпустите, чтобы добавить в библиотеку</b></div></div>
 <div id="toast" role="status" hidden></div>
 <audio id="audio" preload="auto"></audio>
